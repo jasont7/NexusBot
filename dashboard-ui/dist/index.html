@@ -175,7 +175,7 @@
                         justify-content:center; gap: 6px; }
   /* Storage sidebar (vertical) */
   .arch-storage-sidebar { display: flex; flex-direction: column; gap: 8px; }
-  .arch-storage-sidebar .arch-section-head { font-size: 12px; }
+  .arch-storage-sidebar .arch-section-head { font-size: 12px; flex-direction: column; align-items: flex-start; gap: 2px; }
   .arch-storage-item { background: #111; border: 1px solid #ffaa4440; border-radius: 6px; padding: 10px;
                         text-align: center; cursor: pointer; position: relative; transition: all 0.15s; }
   .arch-storage-item:hover { border-color: #ffaa44; transform: translateY(-1px); }
@@ -906,8 +906,8 @@ function renderArchDiagram(data) {
      info:'Sends messages back to any connected channel via the outbound queue. Supports text, embeds, and file attachments. Auto-formats per platform (Markdown for Discord, HTML for Telegram, etc).'},
     {name:'spawn', icon:'\uD83E\uDD16', color:C.purple, desc:'in-process subagents',
      info:'Spawns in-process background agent tasks that run concurrently. Each subagent gets its own session context. Results collected asynchronously. Max 5 concurrent.'},
-    {name:'dispatch', icon:'\uD83D\uDCCB', color:C.orange, desc:'to Engineer agent',
-     info:'Invokes the Engineer specialized agent. Operations: <strong>plan</strong> (decompose task), <strong>approve</strong>, <strong>run</strong> (dispatch to tmux sessions), <strong>status</strong>, <strong>cancel</strong>, <strong>list</strong>. Only used for multi-step engineering tasks.'},
+    {name:'dispatch', icon:'\uD83D\uDCCB', color:C.orange, desc:'to specialized agents',
+     info:'Gateway to <strong>specialized agents</strong> \u2014 autonomous subagents that run outside the main LLM loop. Each specialized agent owns a domain (engineering, research, marketing) and can spawn external processes, manage long-running workflows, and coordinate parallel work. The main agent delegates complex domain tasks to them via this tool.<br><br>Currently supports: <strong>plan</strong> (decompose task), <strong>approve</strong>, <strong>run</strong> (dispatch to sessions), <strong>status</strong>, <strong>cancel</strong>, <strong>list</strong>.'},
     {name:'cron', icon:'\u23F0', color:C.yellow, desc:'scheduled jobs',
      info:'Create, list, and delete scheduled jobs. Stored in <code>cron/jobs.json</code>. Supports cron expressions and natural language intervals. Jobs invoke the agent loop on schedule.'},
     {name:'MCP', icon:'\uD83D\uDD0C', color:C.pink, desc:'external servers',
@@ -1044,20 +1044,16 @@ function renderArchDiagram(data) {
   // ── SPECIALIZED AGENTS ──
   h += '<div class="arch-arrow">\u2193 <span style="font-size:11px; color:#555">via dispatch tool</span></div>';
   h += `<div class="arch-section" style="border-color:${C.purple}30; background:#08080f; padding:14px 18px;">`;
-  h += `<div class="arch-section-head" style="color:${C.purple}">SPECIALIZED AGENTS <span>invoked on-demand by the agent loop \u2014 not every prompt</span></div>`;
+  h += `<div class="arch-section-head" style="color:${C.purple}">SPECIALIZED AGENTS <span>autonomous subagents that own entire domains \u2014 invoked on-demand, not every prompt. Each can spawn external processes, manage workflows, and coordinate parallel work independently of the main LLM loop.</span></div>`;
 
-  // Engineer card (separate from tmux)
-  h += `<div class="arch-card" style="border-color:${C.purple}40; background:#0a0a14;">
+  // Engineer card with tmux nested inside
+  h += `<div class="arch-card" style="border-color:${C.purple}40; background:#0a0a14; overflow:visible;">
     <h4 style="color:${C.purple}">Engineer</h4>
     <p>Decomposes engineering tasks into work items with dependency ordering, dispatches each to an isolated coding session, manages file locks to prevent conflicts, and harvests results.</p>
     <div class="arch-tip"><strong>Engineer</strong> (Specialized Agent)<br>The first specialized agent built for nanobot. Invoked via the <code>dispatch</code> tool when the main agent needs to execute multi-step engineering tasks. Breaks work into items with a dependency DAG, dispatches each to a tmux session running Claude Code or Codex, enforces file-level locks to prevent conflicts across concurrent sessions, and collects output + git diffs on completion.<br><br>Not called on every prompt \u2014 only when tasks require parallel coding sessions or complex multi-file changes.<span class="tip-path">nanobot/agent/engineer.py</span></div>
-  </div>`;
-
-  // tmux sessions (separate card with clear visual separation)
-  h += `<div class="arch-card" style="border-color:${C.red}30; background:#110a0a; margin-top:8px;">
-    <h4 style="color:${C.red}; font-size:13px">\uD83E\uDDF5 tmux Sessions</h4>
-    <p>Claude Code / Codex &middot; max 3 concurrent &middot; polls every 15s &middot; sentinel detection</p>
-    <div class="arch-tip"><strong>tmux Sessions</strong><br>The Engineer dispatches work items to isolated tmux sessions. Each runs <code>claude --print --permission-mode bypassPermissions --max-budget-usd 3.00</code> or Codex with instructions written to a temp file. Completion is detected via the <code>___NANOBOT_DONE___</code> sentinel marker. Output and git diffs are harvested and reported back to the main agent.<span class="tip-path">socket: $TMPDIR/nanobot-tmux-sockets/engineer.sock</span></div>
+    <div style="background:#110a0a; border:1px solid ${C.red}20; border-radius:6px; padding:8px 12px; margin-top:10px; font-size:11px; color:#888; pointer-events:auto; position:relative;">
+      <strong style="color:${C.red}; font-size:12px;">\uD83E\uDDF5 tmux Sessions</strong> &middot; Claude Code / Codex &middot; max 3 concurrent &middot; polls every 15s &middot; sentinel detection
+    </div>
   </div>`;
 
   // Future agents (grayed out placeholders)
