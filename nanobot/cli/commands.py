@@ -432,10 +432,17 @@ def gateway(
 
     console.print(f"[green]✓[/green] Heartbeat: every {hb_cfg.interval_s}s")
 
+    # Dashboard server
+    from nanobot.dashboard.server import DashboardServer
+    dashboard = DashboardServer(engineer=agent.engineer, agent_loop=agent, host="0.0.0.0", port=port + 1)
+    agent.engineer._dashboard = dashboard
+    console.print(f"[green]✓[/green] Dashboard: http://localhost:{port + 1}")
+
     async def run():
         try:
             await cron.start()
             await heartbeat.start()
+            await dashboard.start()
             await asyncio.gather(
                 agent.run(),
                 channels.start_all(),

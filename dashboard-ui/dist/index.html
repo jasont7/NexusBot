@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nanobot dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+         background: #0a0a0a; color: #e0e0e0; padding: 16px; max-width: 1200px; margin: 0 auto; }
+  h1 { color: #fff; margin-bottom: 4px; font-size: 22px; }
+  .subtitle { color: #888; margin-bottom: 20px; font-size: 13px; }
+  .card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 12px;
+          cursor: default; transition: border-color 0.15s; }
+  .card:hover { border-color: #555; }
+  .card.clickable { cursor: pointer; }
+  .card h3 { margin-bottom: 8px; font-size: 15px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+           text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge-planning { background: #2d2000; color: #ffd700; }
+  .badge-approved { background: #002d00; color: #00ff00; }
+  .badge-running { background: #00002d; color: #4da6ff; }
+  .badge-done { background: #002d00; color: #00ff00; }
+  .badge-failed { background: #2d0000; color: #ff4444; }
+  .badge-pending { background: #1a1a1a; color: #888; border: 1px solid #444; }
+  .badge-builtin { background: #1a1a2d; color: #8888ff; }
+  .badge-workspace { background: #2d1a00; color: #ffaa44; }
+  .progress { background: #333; border-radius: 4px; height: 6px; margin-top: 8px; }
+  .progress-bar { background: #4da6ff; height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .items { margin-top: 12px; }
+  .item { padding: 10px 14px; border-left: 3px solid #333; margin-bottom: 6px; background: #111; border-radius: 0 6px 6px 0; }
+  .item.done { border-color: #00ff00; }
+  .item.running { border-color: #4da6ff; }
+  .item.failed { border-color: #ff4444; }
+  .item-title { font-weight: 600; font-size: 14px; }
+  .item-meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 13px;
+         transition: opacity 0.15s; margin-right: 8px; margin-top: 8px; }
+  .btn-approve { background: #00aa00; color: #fff; }
+  .btn-cancel { background: #aa0000; color: #fff; }
+  .btn-secondary { background: #333; color: #ccc; }
+  .btn-save { background: #2a6eff; color: #fff; }
+  .btn:hover { opacity: 0.8; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .output-box { background: #111; border: 1px solid #333; border-radius: 4px; padding: 12px;
+                 font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; font-size: 12px;
+                 white-space: pre-wrap; max-height: 400px; overflow-y: auto; margin-top: 8px;
+                 line-height: 1.5; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 16px; border-radius: 6px; background: #1a1a1a; border: 1px solid #333;
+         cursor: pointer; color: #888; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+  .tab.active { background: #333; color: #fff; border-color: #555; }
+  .tab:hover:not(.active) { color: #ccc; border-color: #444; }
+  .sessions-grid { display: grid; gap: 12px; }
+  .empty { text-align: center; color: #555; padding: 48px; font-size: 14px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .header-left h1 { display: inline; }
+  #status { padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .connected { background: #002d00; color: #00ff00; }
+  .disconnected { background: #2d0000; color: #ff4444; }
+  .config-bar { background: #111; border: 1px solid #333; border-radius: 6px; padding: 8px 12px;
+                margin-bottom: 16px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .config-bar input { background: #0a0a0a; border: 1px solid #444; border-radius: 4px; padding: 4px 8px;
+                      color: #e0e0e0; font-family: monospace; font-size: 12px; flex: 1; max-width: 400px; }
+  .config-bar button { background: #333; color: #ccc; border: none; padding: 4px 12px; border-radius: 4px;
+                       cursor: pointer; font-size: 12px; }
+  .config-bar button:hover { background: #444; }
+  .back-link { cursor: pointer; color: #4da6ff; margin-bottom: 12px; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+  .cost { color: #ffd700; font-size: 12px; }
+  /* Brain tab styles */
+  .brain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .brain-section { margin-bottom: 24px; }
+  .brain-section h2 { font-size: 16px; color: #fff; margin-bottom: 12px; padding-bottom: 6px;
+                       border-bottom: 1px solid #333; }
+  .file-card { padding: 12px 16px; }
+  .file-card .file-name { font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600; color: #fff; }
+  .file-card .file-desc { font-size: 12px; color: #888; margin-top: 4px; }
+  .file-card .file-size { font-size: 11px; color: #555; margin-top: 4px; }
+  .editor-area { width: 100%; min-height: 300px; background: #111; border: 1px solid #333; border-radius: 4px;
+                 padding: 12px; font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; font-size: 12px;
+                 color: #e0e0e0; line-height: 1.5; resize: vertical; margin-top: 8px; }
+  .editor-area:focus { outline: none; border-color: #555; }
+  .save-status { font-size: 12px; margin-left: 8px; }
+  .config-tree { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; }
+  .config-tree details { margin-left: 16px; }
+  .config-tree summary { cursor: pointer; padding: 2px 0; color: #4da6ff; }
+  .config-tree summary:hover { color: #77bbff; }
+  .config-tree .kv { margin-left: 16px; padding: 1px 0; }
+  .config-tree .key { color: #bb88ff; }
+  .config-tree .val { color: #88cc88; }
+  .config-tree .val-num { color: #ffaa44; }
+  .config-tree .val-bool { color: #ff8888; }
+  .config-tree .val-null { color: #666; }
+  .session-card .session-key { font-family: monospace; font-size: 13px; color: #4da6ff; }
+  .session-card .session-meta { font-size: 12px; color: #888; margin-top: 4px; }
+  /* Chat styles */
+  .chat-container { display: flex; flex-direction: column; height: calc(100vh - 200px); min-height: 400px; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .chat-msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; max-width: 85%; line-height: 1.5; font-size: 14px; }
+  .chat-msg.user { background: #1a2d4a; color: #cce; margin-left: auto; border-bottom-right-radius: 2px; }
+  .chat-msg.assistant { background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; margin-right: auto;
+                         border-bottom-left-radius: 2px; }
+  .chat-msg.tool-hint { background: transparent; border: 1px dashed #333; color: #666; font-family: monospace;
+                         font-size: 11px; margin-right: auto; padding: 4px 10px; }
+  .chat-msg.progress-msg { background: transparent; color: #888; font-size: 12px; margin-right: auto; padding: 4px 10px; }
+  .chat-msg.error-msg { background: #2d0000; border: 1px solid #ff4444; color: #ff8888; margin-right: auto; }
+  .chat-msg pre { background: #111; border-radius: 4px; padding: 8px; margin: 6px 0; overflow-x: auto;
+                   font-size: 12px; font-family: 'SF Mono', Monaco, monospace; }
+  .chat-msg code { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; background: #111;
+                    padding: 1px 4px; border-radius: 3px; }
+  .chat-input-bar { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid #333; }
+  .chat-input-bar textarea { flex: 1; background: #111; border: 1px solid #333; border-radius: 8px; padding: 10px 14px;
+                              color: #e0e0e0; font-family: inherit; font-size: 14px; resize: none; min-height: 44px;
+                              max-height: 120px; line-height: 1.4; }
+  .chat-input-bar textarea:focus { outline: none; border-color: #555; }
+  .chat-input-bar button { background: #2a6eff; color: #fff; border: none; border-radius: 8px; padding: 10px 20px;
+                            cursor: pointer; font-weight: 600; font-size: 14px; align-self: flex-end; }
+  .chat-input-bar button:hover { opacity: 0.85; }
+  .chat-input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chat-typing { color: #4da6ff; font-size: 12px; padding: 4px 0; min-height: 20px; }
+  /* Architecture diagram */
+  .arch { max-width: 960px; margin: 0 auto; padding: 20px 0; display: flex; flex-direction: column; gap: 6px; }
+  .arch-label { text-align: center; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 2px 0; }
+  .arch-arrow { text-align: center; font-size: 20px; color: #444; line-height: 1; padding: 2px 0; }
+  /* Channels row */
+  .arch-channels { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .arch-pill { background: #0d1b2a; border: 1px solid #4da6ff40; border-radius: 20px; padding: 6px 16px;
+               font-size: 13px; color: #ccc; position: relative; cursor: default; transition: all 0.15s; }
+  .arch-pill:hover { border-color: #4da6ff; background: #0d1b2a; }
+  /* Cards */
+  .arch-card { background: #141414; border: 1.5px solid #333; border-radius: 10px; padding: 14px 18px;
+               position: relative; transition: all 0.15s; }
+  .arch-card:hover { border-color: #555; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .arch-card.clickable { cursor: pointer; }
+  .arch-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .arch-card p { font-size: 12px; color: #888; margin: 0; line-height: 1.5; }
+  /* Infobox tooltip */
+  .arch-tip { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+              background: #1e1e2e; border: 1px solid #444; border-radius: 8px; padding: 14px 16px;
+              width: 300px; z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+              box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-size: 12px; color: #ccc; line-height: 1.6; }
+  .arch-tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+                     border: 6px solid transparent; border-top-color: #444; }
+  .arch-card:hover .arch-tip, .arch-pill:hover .arch-tip { opacity: 1; pointer-events: auto; }
+  .arch-tip strong { color: #fff; }
+  .arch-tip code { background: #111; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #aaa; }
+  .arch-tip .tip-path { color: #666; font-size: 11px; margin-top: 6px; display: block; }
+  /* Agent loop cycle */
+  .arch-cycle { display: grid; grid-template-columns: 1fr auto 1fr; grid-template-rows: auto auto auto; gap: 0;
+                align-items: center; padding: 8px 0; }
+  .arch-cycle-arrow { color: #555; font-size: 18px; text-align: center; padding: 4px 8px; }
+  .arch-cycle-arrow span { display: block; font-size: 10px; color: #666; font-weight: 400; }
+  .arch-cycle-feedback { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
+                          justify-content: center; padding: 6px 0 0; color: #555; font-size: 12px; }
+  .arch-cycle-feedback hr { flex: 1; border: none; border-top: 1px dashed #333; }
+  /* Tools grid */
+  .arch-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .arch-tool { background: #111; border: 1px solid; border-radius: 8px; padding: 10px; text-align: center;
+               position: relative; transition: all 0.15s; cursor: default; }
+  .arch-tool:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .arch-tool:hover .arch-tip { opacity: 1; }
+  .arch-tool h5 { font-size: 12px; font-weight: 600; margin: 0 0 2px; }
+  .arch-tool p { font-size: 10px; color: #777; margin: 0; }
+  /* Infrastructure row */
+  .arch-infra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* Specialized agents section */
+  .arch-agents-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .arch-agent-main { grid-column: 1 / -1; }
+  .arch-agent-future { background: #0a0a0a; border: 1px dashed #333; border-radius: 8px; padding: 12px;
+                        text-align: center; color: #444; font-size: 12px; display:flex; align-items:center;
+                        justify-content:center; gap: 6px; }
+  .arch-tmux-sub { background: #110a0a; border: 1px solid #ff666620; border-radius: 6px; padding: 8px 12px;
+                    margin-top: 8px; font-size: 11px; color: #888; }
+  .arch-tmux-sub strong { color: #ff6666; font-size: 12px; }
+  /* Background services */
+  .arch-bg-services { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+  /* Services row - unused, kept for compat */
+  .arch-services { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; }
+  /* Storage grid */
+  .arch-storage { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .arch-storage-item { background: #111; border: 1px solid #ffaa4440; border-radius: 6px; padding: 8px;
+                        text-align: center; cursor: pointer; position: relative; transition: all 0.15s; }
+  .arch-storage-item:hover { border-color: #ffaa44; transform: translateY(-1px); }
+  .arch-storage-item:hover .arch-tip { opacity: 1; }
+  .arch-storage-item h5 { font-size: 11px; font-weight: 600; color: #ddd; margin: 0 0 2px; }
+  .arch-storage-item p { font-size: 10px; color: #666; margin: 0; }
+  /* Section wrappers */
+  .arch-section { border: 1.5px solid; border-radius: 12px; padding: 16px 20px; }
+  .arch-section-head { font-size: 13px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .arch-section-head span { font-size: 11px; font-weight: 400; color: #666; }
+  /* Legend */
+  .arch-legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 14px;
+                  background: #111; border: 1px solid #282828; border-radius: 6px; font-size: 11px; color: #666; }
+  .arch-legend-item { display: flex; align-items: center; gap: 5px; }
+  .arch-legend-swatch { width: 10px; height: 10px; border-radius: 3px; }
+  /* Footnote */
+  .arch-footnote { font-size: 11px; color: #444; text-align: right; padding-top: 4px; }
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    .config-bar { flex-wrap: wrap; }
+    .config-bar input { max-width: 100%; }
+    .brain-grid { grid-template-columns: 1fr; }
+    .chat-msg { max-width: 95%; }
+    .arch-cycle { grid-template-columns: 1fr; grid-template-rows: auto; }
+    .arch-cycle-arrow { transform: rotate(90deg); }
+    .arch-cycle-feedback { display: none; }
+    .arch-tools { grid-template-columns: repeat(2, 1fr); }
+    .arch-storage { grid-template-columns: repeat(2, 1fr); }
+    .arch-services { grid-template-columns: 1fr; }
+    .arch-infra { grid-template-columns: 1fr; }
+    .arch-agents-grid { grid-template-columns: 1fr; }
+    .arch-agent-main { grid-column: 1; }
+    .arch-bg-services { grid-template-columns: 1fr; }
+    .arch-tip { width: 220px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>nanobot dashboard</h1>
+    <p class="subtitle">control panel</p>
+  </div>
+  <div id="status" class="disconnected">disconnected</div>
+</div>
+
+<div class="config-bar" id="config-bar">
+  <span style="color:#888">API:</span>
+  <input id="api-url" placeholder="http://localhost:18791" />
+  <button onclick="saveApiUrl()">Connect</button>
+  <span id="api-status" style="color:#888"></span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('projects')">Projects</div>
+  <div class="tab" onclick="showTab('chat')">Chat</div>
+  <div class="tab" onclick="showTab('sessions')">Sessions</div>
+  <div class="tab" onclick="showTab('brain')">Brain</div>
+  <div class="tab" onclick="showTab('arch')">Architecture</div>
+</div>
+
+<div id="projects"></div>
+<div id="arch" style="display:none"></div>
+<div id="chat" style="display:none">
+  <div class="chat-container">
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-typing" id="chat-typing"></div>
+    <div class="chat-input-bar">
+      <textarea id="chat-input" placeholder="Message nanobot..." rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+      <button id="chat-send" onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+<div id="sessions" style="display:none"></div>
+<div id="brain" style="display:none"></div>
+
+<script>
+// ── Configuration ───────────────────────────────────────
+const DEFAULT_API = 'https://nanobot-api.pinpointlabs.io';
+let API_BASE = '';
+let ws = null;
+let pollInterval = null;
+
+const FILE_DESCRIPTIONS = {
+  'SOUL.md': 'Personality, values, communication style',
+  'USER.md': 'User profile, preferences, context',
+  'AGENTS.md': 'Agent behavior instructions, reminders',
+  'TOOLS.md': 'Tool constraints, safety limits',
+  'HEARTBEAT.md': 'Periodic tasks (checked every 30min)',
+  'MEMORY.md': 'Long-term facts (always in context)',
+  'HISTORY.md': 'Event log (searchable, not in context)',
+};
+
+function getApiUrl() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('api')) return params.get('api').replace(/\/+$/, '');
+  const saved = localStorage.getItem('nanobot_api_url');
+  if (saved) return saved;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return window.location.origin;
+  }
+  return DEFAULT_API;
+}
+
+function saveApiUrl() {
+  const input = document.getElementById('api-url');
+  const url = input.value.trim().replace(/\/+$/, '');
+  if (!url) return;
+  localStorage.setItem('nanobot_api_url', url);
+  API_BASE = url + '/api';
+  document.getElementById('api-status').textContent = 'connecting...';
+  connectWS();
+  loadProjects();
+}
+
+function initApi() {
+  const url = getApiUrl();
+  document.getElementById('api-url').value = url;
+  API_BASE = url + '/api';
+}
+
+// ── Tabs ────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab[onclick="showTab('${name}')"]`).classList.add('active');
+  ['projects', 'chat', 'sessions', 'brain', 'arch'].forEach(id => {
+    document.getElementById(id).style.display = id === name ? 'block' : 'none';
+  });
+  if (name === 'sessions') loadSessions();
+  if (name === 'brain') loadBrain();
+  if (name === 'chat' && !chatLoaded) loadChatHistory();
+  if (name === 'arch' && !archLoaded) loadArchitecture();
+}
+
+// ── Projects ────────────────────────────────────────────
+async function loadProjects() {
+  try {
+    const res = await fetch(API_BASE + '/projects');
+    if (!res.ok) throw new Error(res.statusText);
+    const projects = await res.json();
+    document.getElementById('api-status').textContent = '';
+    const el = document.getElementById('projects');
+    if (!projects.length) {
+      el.innerHTML = '<div class="empty">No projects yet.<br>Send a task to nanobot via Discord #build to get started.</div>';
+      return;
+    }
+    el.innerHTML = projects.sort((a,b) => b.created_at.localeCompare(a.created_at)).map(p => {
+      const done = p.work_items.filter(w => w.state === 'done').length;
+      const total = p.work_items.length;
+      const pct = total ? Math.round(done/total*100) : 0;
+      const cost = p.work_items.reduce((s,w) => s + (w.cost_usd||0), 0);
+      const elapsed = p.completed_at
+        ? timeDiff(p.created_at, p.completed_at)
+        : p.state === 'running' ? timeDiff(p.created_at) + ' (running)' : '';
+      return `<div class="card clickable" onclick="loadProject('${p.id}')">
+        <h3>${esc(p.title)} <span class="badge badge-${p.state}">${p.state}</span></h3>
+        <div class="item-meta">
+          ${p.id} &middot; ${new Date(p.created_at).toLocaleString()}
+          ${cost > 0 ? ` &middot; <span class="cost">$${cost.toFixed(2)}</span>` : ''}
+          ${elapsed ? ` &middot; ${elapsed}` : ''}
+        </div>
+        <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+        <div class="item-meta">${done}/${total} items complete</div>
+        <div>
+          ${p.state === 'planning' ? `<button class="btn btn-approve" onclick="event.stopPropagation();approveProject('${p.id}')">Approve &amp; Run</button>` : ''}
+          ${p.state === 'running' ? `<button class="btn btn-cancel" onclick="event.stopPropagation();cancelProject('${p.id}')">Cancel</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('api-status').textContent = 'connection failed';
+    console.error('Failed to load projects', e);
+  }
+}
+
+async function loadProject(id) {
+  try {
+    const res = await fetch(API_BASE + '/projects/' + id);
+    const p = await res.json();
+    const el = document.getElementById('projects');
+    const cost = p.work_items.reduce((s,w) => s + (w.cost_usd||0), 0);
+    el.innerHTML = `
+      <div class="back-link" onclick="loadProjects()">&larr; Back to projects</div>
+      <div class="card">
+        <h3>${esc(p.title)} <span class="badge badge-${p.state}">${p.state}</span>
+        ${p.use_worktrees ? '<span class="badge" style="background:#1a0033;color:#bb88ff">worktrees</span>' : ''}</h3>
+        <div class="item-meta">ID: ${p.id} &middot; Target: <code>${esc(p.target_dir)}</code>
+        ${cost > 0 ? ` &middot; <span class="cost">Total: $${cost.toFixed(2)}</span>` : ''}</div>
+        <div>
+          ${p.state === 'planning' ? `<button class="btn btn-approve" onclick="approveProject('${p.id}')">Approve &amp; Run</button>` : ''}
+          ${p.state === 'running' ? `<button class="btn btn-cancel" onclick="cancelProject('${p.id}')">Cancel</button>` : ''}
+          <button class="btn btn-secondary" onclick="loadProject('${p.id}')">Refresh</button>
+        </div>
+      </div>
+      <div class="items">${p.work_items.map(wi => `
+        <div class="card item ${wi.state}">
+          <div class="item-title">
+            ${esc(wi.id)}: ${esc(wi.title)}
+            <span class="badge badge-${wi.state}">${wi.state}</span>
+            <span style="color:#888;font-size:11px;font-weight:normal">[${wi.agent}]</span>
+          </div>
+          ${wi.depends_on?.length ? `<div class="item-meta">depends on: ${wi.depends_on.join(', ')}</div>` : ''}
+          ${wi.scope?.files_writable?.length ? `<div class="item-meta">writes: ${wi.scope.files_writable.map(f => '<code>'+esc(f)+'</code>').join(', ')}</div>` : ''}
+          ${wi.result_summary ? `<div class="item-meta" style="color:#ccc">&rarr; ${esc(wi.result_summary.substring(0,300))}</div>` : ''}
+          ${wi.error ? `<div class="item-meta" style="color:#ff4444">&varr; ${esc(wi.error)}</div>` : ''}
+          ${wi.cost_usd ? `<div class="item-meta"><span class="cost">$${wi.cost_usd.toFixed(2)}</span></div>` : ''}
+          ${wi.git_diff ? `<div class="output-box">${esc(wi.git_diff)}</div>` : ''}
+          ${wi.state !== 'pending' ? `<div class="back-link" style="margin-top:8px;margin-bottom:0" onclick="loadOutput('${p.id}','${wi.id}',this)">View full output &darr;</div>` : ''}
+        </div>
+      `).join('')}</div>`;
+  } catch(e) { console.error(e); }
+}
+
+async function loadOutput(projId, itemId, el) {
+  try {
+    el.textContent = 'Loading...';
+    const res = await fetch(API_BASE + '/projects/' + projId + '/items/' + itemId + '/output');
+    const data = await res.json();
+    const box = document.createElement('div');
+    box.className = 'output-box';
+    box.textContent = data.output || '(no output)';
+    el.parentNode.appendChild(box);
+    el.remove();
+  } catch(e) { el.textContent = 'Failed to load'; console.error(e); }
+}
+
+async function approveProject(id) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Approving...'; }
+  try {
+    await fetch(API_BASE + '/projects/' + id + '/approve', {method:'POST'});
+    loadProjects();
+  } catch(e) { console.error(e); if (btn) { btn.disabled = false; btn.textContent = 'Approve & Run'; } }
+}
+
+async function cancelProject(id) {
+  if (!confirm('Cancel all running work items?')) return;
+  await fetch(API_BASE + '/projects/' + id + '/cancel', {method:'POST'});
+  loadProjects();
+}
+
+// ── Sessions ────────────────────────────────────────────
+async function loadSessions() {
+  try {
+    const res = await fetch(API_BASE + '/sessions');
+    const sessions = await res.json();
+    const el = document.getElementById('sessions');
+    if (!sessions.length) {
+      el.innerHTML = '<div class="empty">No active tmux sessions</div>';
+      return;
+    }
+    el.innerHTML = '<div class="sessions-grid">' + sessions.map(s => `
+      <div class="card">
+        <h3 style="font-family:monospace;font-size:13px">${esc(s.name)}</h3>
+        <div class="output-box">${esc(s.output)}</div>
+      </div>
+    `).join('') + '</div>';
+  } catch(e) { console.error(e); }
+}
+
+// ── Brain ───────────────────────────────────────────────
+async function loadBrain() {
+  const el = document.getElementById('brain');
+  el.innerHTML = '<div class="empty">Loading brain...</div>';
+  try {
+    const [brainRes, configRes, sessionsRes, cronRes] = await Promise.all([
+      fetch(API_BASE + '/brain'),
+      fetch(API_BASE + '/brain/config'),
+      fetch(API_BASE + '/brain/sessions'),
+      fetch(API_BASE + '/brain/cron'),
+    ]);
+    const brain = await brainRes.json();
+    const config = configRes.ok ? await configRes.json() : null;
+    const chatSessions = sessionsRes.ok ? await sessionsRes.json() : [];
+    const cron = cronRes.ok ? await cronRes.json() : {jobs:[]};
+
+    let html = '';
+
+    // System prompt files
+    html += `<div class="brain-section">
+      <h2>System Prompt Files</h2>
+      <p class="item-meta" style="margin-bottom:12px">These files are loaded into the agent's system prompt on every message. They define personality, behavior, and constraints.</p>
+      <div class="brain-grid">`;
+    for (const [name, info] of Object.entries(brain.bootstrap_files)) {
+      const desc = FILE_DESCRIPTIONS[name] || '';
+      html += `<div class="card file-card clickable" onclick="editBrainFile('${name}')">
+        <div class="file-name">${name}</div>
+        <div class="file-desc">${desc}</div>
+        <div class="file-size">${info.exists ? formatBytes(info.size) : 'missing'}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+
+    // Memory files
+    html += `<div class="brain-section">
+      <h2>Memory</h2>
+      <p class="item-meta" style="margin-bottom:12px">Long-term memory persists across all conversations. MEMORY.md is always in context; HISTORY.md is searchable on demand.</p>
+      <div class="brain-grid">`;
+    for (const [name, info] of Object.entries(brain.memory_files)) {
+      const desc = FILE_DESCRIPTIONS[name] || '';
+      const editable = name !== 'HISTORY.md';
+      html += `<div class="card file-card clickable" onclick="${editable ? `editBrainFile('${name}')` : `viewBrainFile('${name}')`}">
+        <div class="file-name">${name}</div>
+        <div class="file-desc">${desc}</div>
+        <div class="file-size">${info.exists ? formatBytes(info.size) : 'missing'}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+
+    // Skills
+    html += `<div class="brain-section">
+      <h2>Skills</h2>
+      <p class="item-meta" style="margin-bottom:12px">Skills teach the agent specialized behaviors. Workspace skills override built-in ones. Skills marked "always" are loaded into every conversation.</p>
+      <div class="brain-grid">`;
+    for (const skill of brain.skills) {
+      html += `<div class="card file-card clickable" onclick="editSkill('${skill.name}')">
+        <div class="file-name">${esc(skill.name)} <span class="badge badge-${skill.source}">${skill.source}</span></div>
+        <div class="file-size">${formatBytes(skill.size)}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+
+    // Chat sessions
+    html += `<div class="brain-section">
+      <h2>Chat Sessions <span style="color:#888;font-weight:normal;font-size:13px">(${chatSessions.length})</span></h2>
+      <p class="item-meta" style="margin-bottom:12px">Each channel or DM gets its own message history. Short-term context is per-session; long-term memory is shared.</p>
+      <div class="brain-grid">`;
+    for (const s of chatSessions.slice(0, 20)) {
+      const updated = s.updated_at ? new Date(s.updated_at).toLocaleString() : s.modified ? new Date(s.modified * 1000).toLocaleString() : '';
+      html += `<div class="card file-card session-card">
+        <div class="session-key">${esc(s.key)}</div>
+        <div class="session-meta">${s.messages} messages &middot; ${formatBytes(s.size)}</div>
+        ${updated ? `<div class="session-meta">Last active: ${updated}</div>` : ''}
+      </div>`;
+    }
+    if (chatSessions.length > 20) {
+      html += `<div class="item-meta" style="padding:12px">...and ${chatSessions.length - 20} more</div>`;
+    }
+    html += `</div></div>`;
+
+    // Cron jobs
+    html += `<div class="brain-section">
+      <h2>Scheduled Jobs <span style="color:#888;font-weight:normal;font-size:13px">(${cron.jobs?.length || 0})</span></h2>`;
+    if (cron.jobs?.length) {
+      html += `<div class="brain-grid">`;
+      for (const job of cron.jobs) {
+        html += `<div class="card file-card">
+          <div class="file-name">${esc(job.message || job.task || job.id)}</div>
+          <div class="file-desc">${esc(job.schedule || job.cron_expr || job.every_seconds ? 'every ' + job.every_seconds + 's' : '')}</div>
+          <div class="file-size">${esc(job.channel || '')} ${job.enabled === false ? '(disabled)' : ''}</div>
+        </div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div class="item-meta" style="padding:8px 0">No scheduled jobs.</div>`;
+    }
+    html += `</div>`;
+
+    // Config (collapsible tree)
+    if (config && !config.error) {
+      html += `<div class="brain-section">
+        <h2>Configuration</h2>
+        <p class="item-meta" style="margin-bottom:12px">From ~/.nanobot/config.json. API keys are redacted. Edit via config file directly.</p>
+        <div class="card"><div class="config-tree">${renderConfigTree(config)}</div></div>
+      </div>`;
+    }
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div class="empty">Failed to load brain: ${esc(e.message)}</div>`;
+    console.error(e);
+  }
+}
+
+async function editBrainFile(filename) {
+  const el = document.getElementById('brain');
+  try {
+    const res = await fetch(API_BASE + '/brain/files/' + filename);
+    const data = await res.json();
+    el.innerHTML = `
+      <div class="back-link" onclick="loadBrain()">&larr; Back to brain</div>
+      <div class="card">
+        <h3>${esc(filename)} <span class="item-meta">${FILE_DESCRIPTIONS[filename] || ''}</span></h3>
+        <textarea class="editor-area" id="editor-content">${esc(data.content)}</textarea>
+        <div>
+          <button class="btn btn-save" onclick="saveBrainFile('${filename}')">Save</button>
+          <button class="btn btn-secondary" onclick="loadBrain()">Cancel</button>
+          <span id="save-status" class="save-status"></span>
+        </div>
+      </div>`;
+    // Auto-resize textarea
+    const ta = document.getElementById('editor-content');
+    ta.style.height = Math.min(Math.max(ta.scrollHeight, 200), 600) + 'px';
+  } catch(e) { console.error(e); }
+}
+
+async function viewBrainFile(filename) {
+  const el = document.getElementById('brain');
+  try {
+    const res = await fetch(API_BASE + '/brain/files/' + filename);
+    const data = await res.json();
+    el.innerHTML = `
+      <div class="back-link" onclick="loadBrain()">&larr; Back to brain</div>
+      <div class="card">
+        <h3>${esc(filename)} <span class="item-meta">${FILE_DESCRIPTIONS[filename] || ''}</span></h3>
+        <div class="output-box">${esc(data.content || '(empty)')}</div>
+      </div>`;
+  } catch(e) { console.error(e); }
+}
+
+async function saveBrainFile(filename) {
+  const content = document.getElementById('editor-content').value;
+  const statusEl = document.getElementById('save-status');
+  statusEl.textContent = 'Saving...';
+  statusEl.style.color = '#888';
+  try {
+    const res = await fetch(API_BASE + '/brain/files/' + filename, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.textContent = 'Saved (' + formatBytes(data.size) + ')';
+      statusEl.style.color = '#00ff00';
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.color = '#ff4444';
+    }
+  } catch(e) {
+    statusEl.textContent = 'Failed to save';
+    statusEl.style.color = '#ff4444';
+  }
+}
+
+async function editSkill(name) {
+  const el = document.getElementById('brain');
+  try {
+    const res = await fetch(API_BASE + '/brain/skills/' + name);
+    const data = await res.json();
+    const isBuiltin = data.source === 'builtin';
+    el.innerHTML = `
+      <div class="back-link" onclick="loadBrain()">&larr; Back to brain</div>
+      <div class="card">
+        <h3>${esc(name)} <span class="badge badge-${data.source}">${data.source}</span></h3>
+        ${isBuiltin ? '<p class="item-meta" style="margin-bottom:8px">Built-in skill. Saving will create a workspace override.</p>' : ''}
+        <textarea class="editor-area" id="editor-content">${esc(data.content)}</textarea>
+        <div>
+          <button class="btn btn-save" onclick="saveSkill('${name}')">Save${isBuiltin ? ' as workspace override' : ''}</button>
+          <button class="btn btn-secondary" onclick="loadBrain()">Cancel</button>
+          <span id="save-status" class="save-status"></span>
+        </div>
+      </div>`;
+    const ta = document.getElementById('editor-content');
+    ta.style.height = Math.min(Math.max(ta.scrollHeight, 200), 600) + 'px';
+  } catch(e) { console.error(e); }
+}
+
+async function saveSkill(name) {
+  const content = document.getElementById('editor-content').value;
+  const statusEl = document.getElementById('save-status');
+  statusEl.textContent = 'Saving...';
+  statusEl.style.color = '#888';
+  try {
+    const res = await fetch(API_BASE + '/brain/skills/' + name, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.textContent = 'Saved (' + formatBytes(data.size) + ')';
+      statusEl.style.color = '#00ff00';
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.color = '#ff4444';
+    }
+  } catch(e) {
+    statusEl.textContent = 'Failed to save';
+    statusEl.style.color = '#ff4444';
+  }
+}
+
+function renderConfigTree(obj, depth) {
+  depth = depth || 0;
+  let html = '';
+  for (const [k, v] of Object.entries(obj)) {
+    if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0) {
+      const open = depth < 1 ? ' open' : '';
+      html += `<details${open}><summary>${esc(k)}</summary>${renderConfigTree(v, depth+1)}</details>`;
+    } else if (Array.isArray(v)) {
+      if (v.length === 0) {
+        html += `<div class="kv"><span class="key">${esc(k)}</span>: <span class="val-null">[]</span></div>`;
+      } else {
+        html += `<details><summary>${esc(k)} [${v.length}]</summary>`;
+        v.forEach((item, i) => {
+          if (typeof item === 'object') {
+            html += `<details><summary>[${i}]</summary>${renderConfigTree(item, depth+2)}</details>`;
+          } else {
+            html += `<div class="kv"><span class="key">[${i}]</span>: <span class="val">${esc(String(item))}</span></div>`;
+          }
+        });
+        html += `</details>`;
+      }
+    } else {
+      let cls = 'val';
+      if (typeof v === 'number') cls = 'val-num';
+      else if (typeof v === 'boolean') cls = 'val-bool';
+      else if (v === null || v === undefined) cls = 'val-null';
+      const display = v === null ? 'null' : v === undefined ? 'undefined' : String(v);
+      html += `<div class="kv"><span class="key">${esc(k)}</span>: <span class="${cls}">${esc(display)}</span></div>`;
+    }
+  }
+  return html;
+}
+
+// ── Chat ────────────────────────────────────────────────
+let chatLoaded = false;
+let chatBusy = false;
+
+async function loadChatHistory() {
+  try {
+    const res = await fetch(API_BASE + '/chat/history');
+    if (!res.ok) return;
+    const messages = await res.json();
+    const el = document.getElementById('chat-messages');
+    el.innerHTML = '';
+    for (const msg of messages) {
+      appendChatMsg(msg.role, msg.content);
+    }
+    scrollChat();
+    chatLoaded = true;
+  } catch(e) { console.error('Failed to load chat history', e); }
+}
+
+function appendChatMsg(role, content, cls) {
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + (cls || role);
+  div.innerHTML = renderMarkdown(content);
+  el.appendChild(div);
+  return div;
+}
+
+function scrollChat() {
+  const el = document.getElementById('chat-messages');
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  // Simple markdown: code blocks, inline code, bold, links
+  let html = esc(text);
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+    '<pre>' + code + '</pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+async function sendChat() {
+  if (chatBusy) return;
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  chatBusy = true;
+  document.getElementById('chat-send').disabled = true;
+
+  // Show user message
+  appendChatMsg('user', message);
+  scrollChat();
+
+  // Show typing indicator
+  const typingEl = document.getElementById('chat-typing');
+  typingEl.textContent = 'nanobot is thinking...';
+
+  // Track current assistant response for streaming
+  let assistantDiv = null;
+  let toolHints = [];
+
+  try {
+    const res = await fetch(API_BASE + '/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message}),
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      let currentEvent = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ') && currentEvent) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            handleChatEvent(currentEvent, data, toolHints);
+          } catch(e) {}
+          currentEvent = '';
+        }
+      }
+    }
+  } catch(e) {
+    appendChatMsg('assistant', 'Connection error: ' + e.message, 'error-msg');
+  }
+
+  typingEl.textContent = '';
+  chatBusy = false;
+  document.getElementById('chat-send').disabled = false;
+  input.focus();
+  scrollChat();
+}
+
+function handleChatEvent(event, data, toolHints) {
+  const typingEl = document.getElementById('chat-typing');
+  switch (event) {
+    case 'tool':
+      typingEl.textContent = data.content || 'using tool...';
+      appendChatMsg('assistant', data.content, 'tool-hint');
+      scrollChat();
+      break;
+    case 'progress':
+      typingEl.textContent = 'nanobot is working...';
+      break;
+    case 'message':
+      typingEl.textContent = '';
+      appendChatMsg('assistant', data.content);
+      scrollChat();
+      break;
+    case 'error':
+      typingEl.textContent = '';
+      appendChatMsg('assistant', data.content, 'error-msg');
+      scrollChat();
+      break;
+    case 'done':
+      typingEl.textContent = '';
+      break;
+  }
+}
+
+// Auto-resize chat textarea
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('chat-input');
+  if (ta) {
+    ta.addEventListener('input', () => {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+    });
+  }
+});
+
+// ── Architecture Diagram ────────────────────────────────
+let archLoaded = false;
+
+async function loadArchitecture() {
+  const el = document.getElementById('arch');
+  try {
+    const res = await fetch(API_BASE + '/architecture');
+    const data = await res.json();
+    el.innerHTML = renderArchDiagram(data);
+    archLoaded = true;
+  } catch(e) {
+    el.innerHTML = renderArchDiagram(null);
+    archLoaded = true;
+  }
+}
+
+function renderArchDiagram(data) {
+  const channels = data?.channels || ['discord', 'dashboard'];
+  const bootstrapFiles = data?.bootstrap_files || [];
+  const sessionCount = data?.session_count || 0;
+
+  const C = {
+    blue: '#4da6ff', green: '#44cc66', purple: '#bb88ff', orange: '#ffaa44',
+    yellow: '#ffd700', red: '#ff6666', cyan: '#66dddd', pink: '#ff88cc',
+  };
+
+  const allCh = [...new Set([...channels, 'dashboard'])];
+  const icons = {discord:'\uD83D\uDCAC',telegram:'\u2708\uFE0F',slack:'\uD83D\uDCE8',whatsapp:'\uD83D\uDCF1',email:'\u2709\uFE0F',dashboard:'\uD83C\uDF10',matrix:'\uD83D\uDD12',cli:'\u2328\uFE0F'};
+  const chInfo = {
+    discord: 'Primary channel. Connects via Discord.js WebSocket gateway. Supports text, embeds, reactions, threads. Channels: #general (chat), #build (engineering), #research.',
+    telegram: 'Telegram Bot API with long-polling. Supports markdown formatting, inline keyboards, and file uploads.',
+    slack: 'Slack Events API via WebSocket. Supports blocks, threads, and app mentions.',
+    whatsapp: 'WhatsApp Business API. Supports text, media messages, and templates.',
+    email: 'IMAP polling + SMTP sending. Parses email threads into conversation context.',
+    dashboard: 'This web UI. Connects via REST API + WebSocket at /api/ws for real-time updates. Port 18791.',
+    matrix: 'Matrix protocol via matrix-nio. End-to-end encrypted rooms supported.',
+    cli: 'Local command-line interface for direct interaction.',
+  };
+
+  const bfItems = ['Identity block', ...bootstrapFiles.map(f => f.replace('.md','')), 'MEMORY.md', 'Always-on skills', 'Skills summary'];
+  const bfClick = item => {
+    if (item === 'MEMORY.md') return "showTab('brain'); editBrainFile('MEMORY.md')";
+    if (item === 'Identity block') return "showTab('brain'); editBrainFile('SOUL.md')";
+    if (item.includes('skill') || item.includes('Skill')) return "showTab('brain')";
+    return "showTab('brain'); editBrainFile('" + esc(item.endsWith('.md') ? item : item + '.md') + "')";
+  };
+  const bfColor = item =>
+    item.includes('Identity') ? C.cyan : item.includes('MEMORY') ? C.yellow :
+    /skill/i.test(item) ? C.orange : '#ddd';
+
+  const tools = [
+    {name:'File I/O', icon:'\uD83D\uDCC1', color:C.green, desc:'read, write, edit, list_dir',
+     info:'Reads, writes, and edits files in the workspace. <code>list_dir</code> for directory listings. All paths relative to <code>~/.nanobot/workspace/</code>.'},
+    {name:'exec', icon:'\u26A1', color:C.red, desc:'shell commands',
+     info:'Runs shell commands with a configurable timeout. Captures stdout+stderr. Used for git, npm, system tools. Sandboxed to workspace directory.'},
+    {name:'web', icon:'\uD83C\uDF10', color:C.cyan, desc:'search + fetch',
+     info:'<strong>search</strong>: Brave Search API for web queries.<br><strong>fetch</strong>: HTTP GET/POST with response parsing. Extracts readable text from HTML pages.'},
+    {name:'message', icon:'\uD83D\uDCE8', color:C.blue, desc:'via outbound queue',
+     info:'Sends messages back to any connected channel via the outbound queue. Supports text, embeds, and file attachments. Auto-formats per platform (Markdown for Discord, HTML for Telegram, etc).'},
+    {name:'spawn', icon:'\uD83E\uDD16', color:C.purple, desc:'in-process subagents',
+     info:'Spawns in-process background agent tasks that run concurrently. Each subagent gets its own session context. Results collected asynchronously. Max 5 concurrent.'},
+    {name:'dispatch', icon:'\uD83D\uDCCB', color:C.orange, desc:'to Engineer agent',
+     info:'Invokes the Engineer specialized agent. Operations: <strong>plan</strong> (decompose task), <strong>approve</strong>, <strong>run</strong> (dispatch to tmux sessions), <strong>status</strong>, <strong>cancel</strong>, <strong>list</strong>. Only used for multi-step engineering tasks.'},
+    {name:'cron', icon:'\u23F0', color:C.yellow, desc:'scheduled jobs',
+     info:'Create, list, and delete scheduled jobs. Stored in <code>cron/jobs.json</code>. Supports cron expressions and natural language intervals. Jobs invoke the agent loop on schedule.'},
+    {name:'MCP', icon:'\uD83D\uDD0C', color:C.pink, desc:'external servers',
+     info:'Model Context Protocol client. Lazy-connected on first message. Connects to external MCP servers for specialized tools (database access, API integrations, etc). Configured in <code>config.json</code>.'},
+  ];
+
+  const storage = [
+    {name:'config.json', desc:'settings',
+     info:'Main configuration: provider API keys, channel credentials, model preferences, MCP server configs, feature flags.'},
+    {name:'memory/', desc:'MEMORY.md',
+     info:'<strong>MEMORY.md</strong>: Long-term memory consolidated from conversations.<br><strong>HISTORY.md</strong>: Chronological activity log. Both auto-updated by MemoryStore.'},
+    {name:'sessions/', desc:'chat history',
+     info:'Per-channel JSONL files. Each line is a message with role, content, timestamp, and metadata. Loaded into context on new messages.'},
+    {name:'skills/', desc:'SKILL.md files',
+     info:'Custom skill definitions. Each skill is a directory with a <code>SKILL.md</code> teaching the agent when and how to use it. Loaded into context as summaries.'},
+    {name:'engineer/', desc:'projects',
+     info:'Project plans as JSON files. Includes work items, dependencies, status. Also <code>locks.json</code> for file-level conflict prevention across concurrent sessions.'},
+    {name:'cron/', desc:'schedules',
+     info:'<code>jobs.json</code> containing scheduled job definitions. Each job has an ID, cron expression, channel target, and instruction prompt.'},
+  ];
+
+  let h = '<div class="arch">';
+
+  // ── NANOBOT GATEWAY (outer container) ──
+  h += `<div class="arch-section" style="border-color:#ffffff15; background:#060606; padding:16px 18px;">`;
+  h += `<div class="arch-section-head" style="color:#ccc">NANOBOT GATEWAY <span>single Python process \u00b7 pure asyncio \u00b7 <code>nanobot gateway --port 18790</code></span></div>`;
+
+  // ── MESSAGE SOURCES (unified pills) ──
+  h += '<div class="arch-channels">';
+  allCh.forEach(ch => {
+    const icon = icons[ch] || '\uD83D\uDCAC';
+    h += `<div class="arch-pill">${icon} ${esc(ch)}
+      <div class="arch-tip"><strong>${esc(ch)}</strong><br>${chInfo[ch] || 'Message channel'}</div>
+    </div>`;
+  });
+  h += `<div class="arch-pill" style="border-color:${C.green}60; color:${C.green}">\uD83D\uDC93 Heartbeat <span style="font-size:10px; opacity:0.7">every 30min</span>
+    <div class="arch-tip"><strong>Heartbeat</strong><br>Periodic background task that fires every 30 minutes. Calls <code>agent.process_direct()</code> to trigger memory consolidation, session cleanup, and status checks. Keeps the agent aware of time passing between user messages.</div>
+  </div>`;
+  h += `<div class="arch-pill" style="border-color:${C.yellow}60; color:${C.yellow}">\u23F0 Cron <span style="font-size:10px; opacity:0.7">scheduled jobs</span>
+    <div class="arch-tip"><strong>Cron Scheduler</strong><br>Executes jobs defined in <code>cron/jobs.json</code>. Each job runs on a cron schedule, calling <code>agent.process_direct()</code> with a predefined instruction and target channel. Useful for recurring reports, monitoring, and maintenance tasks.</div>
+  </div>`;
+  h += '</div>';
+
+  // ── MessageBus ──
+  h += '<div class="arch-arrow">\u2193\u2191</div>';
+  h += `<div class="arch-card" style="border-color:${C.blue}40; text-align:center; max-width:480px; margin:0 auto; padding:10px 16px;">
+    <h4 style="color:${C.blue}">MessageBus</h4>
+    <p>inbound queue \u2192 AgentLoop \u2192 outbound queue \u2192 ChannelManager</p>
+    <div class="arch-tip"><strong>MessageBus</strong><br>Two async queues. <strong>Inbound</strong> (<code>InboundMessage</code>): messages from any source are queued and dispatched to the AgentLoop. <strong>Outbound</strong> (<code>OutboundMessage</code>): agent responses are queued and routed back to channels. ChannelManager runs a <code>_dispatch_outbound()</code> loop that routes outbound messages back to the originating channel. Handles concurrency and rate limiting.</div>
+  </div>`;
+
+  // ── AGENT LOOP (the core) ──
+  h += '<div class="arch-arrow">\u2193</div>';
+  h += `<div class="arch-section" style="border-color:${C.green}40; background:#0a120a;">`;
+  h += `<div class="arch-section-head" style="color:${C.green}">AGENT LOOP <span>consumes inbound \u2192 builds context \u2192 calls LLM \u2192 executes tools \u2192 publishes outbound</span></div>`;
+
+  // ── Cycle: ContextBuilder → LLM → ToolLoop (with feedback) ──
+  h += '<div class="arch-cycle">';
+
+  // ContextBuilder (left)
+  h += `<div class="arch-card" style="border-color:${C.purple}40;">
+    <h4 style="color:${C.purple}">ContextBuilder</h4>
+    <p style="margin-bottom:6px">Assembles system prompt:</p>
+    <ol style="list-style:decimal; padding-left:18px; margin:0; font-size:12px; line-height:1.9;">`;
+  bfItems.forEach(item => {
+    h += `<li style="color:${bfColor(item)}; cursor:pointer;" onclick="${bfClick(item)}" title="Edit in Brain tab">${esc(item)}</li>`;
+  });
+  h += `</ol>
+    <div class="arch-tip"><strong>ContextBuilder</strong><br>Assembles the full system prompt sent to the LLM on every turn. Concatenates files in order: identity (SOUL.md), bootstrap configs, long-term memory, active skill definitions, and skill summaries. Total context is tracked and trimmed to fit model limits.<span class="tip-path">nanobot/agent/context.py</span></div>
+  </div>`;
+
+  // Arrow right
+  h += `<div class="arch-cycle-arrow" style="color:${C.purple}">\u2192<span>prompt +<br>history</span></div>`;
+
+  // LLM Provider (right)
+  h += `<div class="arch-card" style="border-color:${C.yellow}40;">
+    <h4 style="color:${C.yellow}">LLM Provider</h4>
+    <p style="margin-bottom:6px">Auto-matched via LiteLLM:</p>
+    <div style="font-size:12px; line-height:1.8; color:#bbb;">Anthropic \u00b7 OpenAI \u00b7 DeepSeek \u00b7 Gemini<br>OpenRouter \u00b7 Moonshot \u00b7 +10 more</div>
+    <div class="arch-tip"><strong>LLM Provider</strong><br>Unified interface to 16+ LLM providers via LiteLLM. Auto-detects provider from model name in config. Supports streaming, tool calls, vision, and extended thinking. Handles retries, rate limits, and fallback models.<span class="tip-path">nanobot/providers/</span></div>
+  </div>`;
+
+  // Feedback loop row
+  h += '<div class="arch-cycle-feedback"><hr><span>\u21BB tool results feed back into context (max 40 iterations)</span><hr></div>';
+
+  h += '</div>'; // end arch-cycle
+
+  // ── Tools Grid ──
+  h += '<div class="arch-tools" style="margin-top:8px;">';
+  tools.forEach(t => {
+    h += `<div class="arch-tool" style="border-color:${t.color}40;">
+      <h5 style="color:${t.color}">${t.icon} ${esc(t.name)}</h5>
+      <p>${esc(t.desc)}</p>
+      <div class="arch-tip">${t.info}</div>
+    </div>`;
+  });
+  h += '</div>';
+
+  // ── Memory + Session ──
+  h += '<div class="arch-infra" style="margin-top:8px;">';
+  h += `<div class="arch-card clickable" style="border-color:${C.yellow}40; text-align:center; padding:10px;" onclick="showTab('brain'); editBrainFile('MEMORY.md')" title="Edit in Brain tab">
+    <h4 style="color:${C.yellow}; font-size:13px">MemoryStore</h4>
+    <p>consolidate() \u2192 MEMORY.md + HISTORY.md</p>
+    <div class="arch-tip"><strong>MemoryStore</strong><br>After each conversation, extracts key facts and updates <code>MEMORY.md</code> (structured knowledge) and appends to <code>HISTORY.md</code> (chronological log). Uses the LLM itself for consolidation. Memory is loaded into every future context.<span class="tip-path">nanobot/agent/memory.py</span></div>
+  </div>`;
+  h += `<div class="arch-card" style="border-color:${C.cyan}40; text-align:center; padding:10px;">
+    <h4 style="color:${C.cyan}; font-size:13px">SessionManager</h4>
+    <p>${esc(String(sessionCount))} sessions (per channel/DM)</p>
+    <div class="arch-tip"><strong>SessionManager</strong><br>Maintains separate conversation histories per channel and DM. Each session is a JSONL file with messages, tool calls, and metadata. Sessions are loaded into context to maintain conversational continuity.<span class="tip-path">nanobot/session/manager.py</span></div>
+  </div>`;
+  h += '</div>';
+
+  h += '</div>'; // end AGENT LOOP
+
+  // ── SPECIALIZED AGENTS ──
+  h += '<div class="arch-arrow">\u2193 <span style="font-size:11px; color:#555">via dispatch tool</span></div>';
+  h += `<div class="arch-section" style="border-color:${C.purple}30; background:#08080f; padding:14px 18px;">`;
+  h += `<div class="arch-section-head" style="color:${C.purple}">SPECIALIZED AGENTS <span>invoked on-demand by the agent loop \u2014 not every prompt</span></div>`;
+
+  // Engineer (main agent)
+  h += `<div class="arch-card arch-agent-main" style="border-color:${C.purple}40; background:#0a0a14;">
+    <h4 style="color:${C.purple}">Engineer</h4>
+    <p>Decomposes engineering tasks into work items with dependency ordering, dispatches each to an isolated coding session, manages file locks to prevent conflicts, and harvests results.</p>
+    <div class="arch-tip"><strong>Engineer</strong> (Specialized Agent)<br>The first specialized agent built for nanobot. Invoked via the <code>dispatch</code> tool when the main agent needs to execute multi-step engineering tasks. Breaks work into items with a dependency DAG, dispatches each to a tmux session running Claude Code or Codex, enforces file-level locks to prevent conflicts across concurrent sessions, and collects output + git diffs on completion.<br><br>Not called on every prompt \u2014 only when tasks require parallel coding sessions or complex multi-file changes.<span class="tip-path">nanobot/agent/orchestrator.py</span></div>
+    <div class="arch-tmux-sub">
+      <strong>tmux sessions</strong> \u00b7 Claude Code / Codex \u00b7 max 3 concurrent \u00b7 polls every 15s \u00b7 sentinel detection
+      <div class="arch-tip" style="bottom:auto; top:calc(100% + 10px);"><strong>tmux Sessions</strong><br>The Engineer dispatches work items to isolated tmux sessions. Each runs <code>claude --print --permission-mode bypassPermissions --max-budget-usd 3.00</code> or Codex with instructions written to a temp file. Completion is detected via the <code>___NANOBOT_DONE___</code> sentinel marker. Output and git diffs are harvested and reported back to the main agent.<span class="tip-path">socket: $TMPDIR/nanobot-tmux-sockets/orchestrator.sock</span></div>
+    </div>
+  </div>`;
+
+  // Future agents (grayed out placeholders)
+  h += '<div class="arch-agents-grid">';
+  h += '<div class="arch-agent-future">Researcher <span style="color:#333">\u00b7 coming soon</span></div>';
+  h += '<div class="arch-agent-future">Marketer <span style="color:#333">\u00b7 coming soon</span></div>';
+  h += '</div>';
+
+  h += '</div>'; // end SPECIALIZED AGENTS
+
+  // ── DASHBOARD SERVER (its own card inside gateway) ──
+  h += `<div class="arch-card" style="border-color:${C.blue}40; background:#080810; text-align:center; padding:12px 16px; margin-top:6px;">
+    <h4 style="color:${C.blue}">Dashboard Server</h4>
+    <p>aiohttp \u00b7 port 18791 \u00b7 REST API + WebSocket \u00b7 can inject messages via <code>agent.process_direct()</code></p>
+    <div class="arch-tip"><strong>Dashboard Server</strong><br>aiohttp web server on port 18791. Serves REST API for project status, architecture info, brain file editing, and chat. WebSocket at <code>/api/ws</code> pushes real-time updates. Can also inject messages directly into the agent loop via <code>agent.process_direct()</code>. This UI connects to it.<span class="tip-path">nanobot/dashboard/server.py</span></div>
+  </div>`;
+
+  h += '</div>'; // end NANOBOT GATEWAY
+
+  // ── PERSISTENT STORAGE (outside gateway) ──
+  h += `<div class="arch-section" style="border-color:${C.orange}30; border-style:dashed; background:#100e08; padding:12px 16px; margin-top:6px;">`;
+  h += `<div class="arch-section-head" style="color:${C.orange}">PERSISTENT STORAGE <span>~/.nanobot/workspace/ \u2014 on disk, shared by all components</span></div>`;
+  h += '<div class="arch-storage">';
+  storage.forEach(item => {
+    h += `<div class="arch-storage-item" onclick="showTab('brain')" title="View in Brain tab">
+      <h5>${esc(item.name)}</h5><p>${esc(item.desc)}</p>
+      <div class="arch-tip">${item.info}</div>
+    </div>`;
+  });
+  h += '</div></div>';
+
+  // ── Footnote + Legend ──
+  h += `<div class="arch-footnote">Remote: Cloudflare Tunnel \u2192 nanobot-api.pinpointlabs.io \u2192 localhost:18791</div>`;
+
+  h += '</div>'; // end arch
+
+  h += `<div class="arch-legend">
+    <div class="arch-legend-item"><div class="arch-legend-swatch" style="background:${C.blue}"></div>I/O</div>
+    <div class="arch-legend-item"><div class="arch-legend-swatch" style="background:${C.green}"></div>Core</div>
+    <div class="arch-legend-item"><div class="arch-legend-swatch" style="background:${C.purple}"></div>Agents</div>
+    <div class="arch-legend-item"><div class="arch-legend-swatch" style="background:${C.yellow}"></div>LLM / Memory</div>
+    <div class="arch-legend-item"><div class="arch-legend-swatch" style="background:${C.orange}"></div>Tools / Storage</div>
+    <div class="arch-legend-item" style="margin-left:auto; color:#555">hover any component for details</div>
+  </div>`;
+
+  return h;
+}
+
+// ── Utilities ───────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function timeDiff(from, to) {
+  const ms = (to ? new Date(to) : new Date()) - new Date(from);
+  const s = Math.floor(ms/1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s/60);
+  if (m < 60) return m + 'm ' + (s%60) + 's';
+  const h = Math.floor(m/60);
+  return h + 'h ' + (m%60) + 'm';
+}
+
+function formatBytes(b) {
+  if (!b) return '0 B';
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(1) + ' MB';
+}
+
+// ── WebSocket ───────────────────────────────────────────
+function connectWS() {
+  if (ws) { try { ws.close(); } catch(e) {} }
+  const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws';
+  try {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      document.getElementById('status').className = 'connected';
+      document.getElementById('status').textContent = 'connected';
+      document.getElementById('api-status').textContent = '';
+    };
+    ws.onclose = () => {
+      document.getElementById('status').className = 'disconnected';
+      document.getElementById('status').textContent = 'disconnected';
+      setTimeout(connectWS, 5000);
+    };
+    ws.onerror = () => {};
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'project_updated') loadProjects();
+      } catch(err) {}
+    };
+  } catch(e) {
+    setTimeout(connectWS, 5000);
+  }
+}
+
+// ── Init ────────────────────────────────────────────────
+initApi();
+loadProjects();
+connectWS();
+pollInterval = setInterval(loadProjects, 30000);
+</script>
+</body>
+</html>

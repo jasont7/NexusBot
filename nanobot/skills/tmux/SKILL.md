@@ -65,7 +65,7 @@ To monitor:
 - tmux is supported on macOS/Linux. On Windows, use WSL and install tmux inside WSL.
 - This skill is gated to `darwin`/`linux` and requires `tmux` on PATH.
 
-## Orchestrating Coding Agents (Codex, Claude Code)
+## Running Coding Agents (Codex, Claude Code)
 
 tmux excels at running multiple coding agents in parallel:
 

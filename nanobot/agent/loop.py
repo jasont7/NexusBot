@@ -20,6 +20,7 @@ from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTo
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
+from nanobot.agent.tools.dispatch import DispatchTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
@@ -83,9 +84,12 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
 
+        from nanobot.agent.engineer import Engineer
+
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
+        self.engineer = Engineer(workspace=workspace, bus=bus)
         self.subagents = SubagentManager(
             provider=provider,
             workspace=workspace,
@@ -127,6 +131,7 @@ class AgentLoop:
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
+        self.tools.register(DispatchTool(engineer=self.engineer))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
@@ -154,7 +159,7 @@ class AgentLoop:
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron"):
+        for name in ("message", "spawn", "cron", "dispatch"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     tool.set_context(channel, chat_id, *([message_id] if name == "message" else []))
@@ -269,6 +274,10 @@ class AgentLoop:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
         await self._connect_mcp()
+        # Resume engineer polling for any projects that were running before restart
+        resumed = await self.engineer.resume_polling()
+        if resumed:
+            logger.info("Engineer resumed polling for {} running work items", resumed)
         logger.info("Agent loop started")
 
         while self._running:
@@ -354,7 +363,10 @@ class AgentLoop:
             history = session.get_history(max_messages=self.memory_window)
             messages = self.context.build_messages(
                 history=history,
-                current_message=msg.content, channel=channel, chat_id=chat_id,
+                current_message=msg.content,
+                channel=channel,
+                chat_id=chat_id,
+                extra_metadata=msg.metadata,
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -430,7 +442,9 @@ class AgentLoop:
             history=history,
             current_message=msg.content,
             media=msg.media if msg.media else None,
-            channel=msg.channel, chat_id=msg.chat_id,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            extra_metadata=msg.metadata,
         )
 
         async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:

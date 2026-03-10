@@ -34,6 +34,7 @@ class DiscordChannel(BaseChannel):
         self._typing_tasks: dict[str, asyncio.Task] = {}
         self._http: httpx.AsyncClient | None = None
         self._bot_user_id: str | None = None
+        self._plan_messages: dict[str, str] = {}  # Discord message_id -> project_id
 
     async def start(self) -> None:
         """Start the Discord gateway connection."""
@@ -112,15 +113,20 @@ class DiscordChannel(BaseChannel):
                     payload["message_reference"] = {"message_id": msg.reply_to}
                     payload["allowed_mentions"] = {"replied_user": False}
 
-                if not await self._send_payload(url, headers, payload):
+                resp_data = await self._send_payload(url, headers, payload)
+                if not resp_data:
                     break  # Abort remaining chunks on failure
+
+                # Track plan messages for reaction-based approval
+                if i == 0 and resp_data:
+                    self._track_plan_message(resp_data, chunk)
         finally:
             await self._stop_typing(msg.chat_id)
 
     async def _send_payload(
         self, url: str, headers: dict[str, str], payload: dict[str, Any]
-    ) -> bool:
-        """Send a single Discord API payload with retry on rate-limit. Returns True on success."""
+    ) -> dict[str, Any] | None:
+        """Send a single Discord API payload with retry on rate-limit. Returns response data on success."""
         for attempt in range(3):
             try:
                 response = await self._http.post(url, headers=headers, json=payload)
@@ -131,13 +137,13 @@ class DiscordChannel(BaseChannel):
                     await asyncio.sleep(retry_after)
                     continue
                 response.raise_for_status()
-                return True
+                return response.json()
             except Exception as e:
                 if attempt == 2:
                     logger.error("Error sending Discord message: {}", e)
                 else:
                     await asyncio.sleep(1)
-        return False
+        return None
 
     async def _send_file(
         self,
@@ -220,6 +226,8 @@ class DiscordChannel(BaseChannel):
                 logger.info("Discord bot connected as user {}", self._bot_user_id)
             elif op == 0 and event_type == "MESSAGE_CREATE":
                 await self._handle_message_create(payload)
+            elif op == 0 and event_type == "MESSAGE_REACTION_ADD":
+                await self._handle_reaction_add(payload)
             elif op == 7:
                 # RECONNECT: exit loop to reconnect
                 logger.info("Discord gateway requested reconnect")
@@ -264,6 +272,28 @@ class DiscordChannel(BaseChannel):
                 await asyncio.sleep(interval_s)
 
         self._heartbeat_task = asyncio.create_task(heartbeat_loop())
+
+    def _channel_runtime_metadata(self, channel_id: str) -> dict[str, str]:
+        """Return channel-specific runtime guidance metadata for the agent."""
+        if channel_id == "1479750225492054028":
+            return {
+                "discord_channel_role": "general",
+                "response_style": "conversational, lightweight, friendly, naturally back-and-forth",
+                "operating_mode": "Treat this as a casual chat channel. Default to short-to-medium replies. Ask brief follow-up questions when helpful. Avoid overusing tools or producing long structured reports unless explicitly requested. Keep momentum and conversational flow.",
+            }
+        if channel_id == "1479763439282028657":
+            return {
+                "discord_channel_role": "build",
+                "response_style": "focused, implementation-oriented, technically rigorous",
+                "operating_mode": "Treat this as a build/work channel for coding and feature work. Be structured and execution-oriented. Clarify requirements when needed, propose plans for non-trivial tasks, use tools deliberately, inspect files before editing, and prefer concrete implementation steps, diffs, validation, and next actions over casual chatter.",
+            }
+        if channel_id == "1479763527999946866":
+            return {
+                "discord_channel_role": "research",
+                "response_style": "analytical, thorough, synthesis-oriented",
+                "operating_mode": "Treat this as a research channel for deeper investigation across local files and the web. Prefer careful scoping, explicit assumptions, evidence-based reasoning, and well-structured findings. Summaries should be clear, and longer reports are appropriate when useful.",
+            }
+        return {}
 
     async def _handle_message_create(self, payload: dict[str, Any]) -> None:
         """Handle incoming Discord messages."""
@@ -316,24 +346,36 @@ class DiscordChannel(BaseChannel):
 
         await self._start_typing(channel_id)
 
+        metadata = {
+            "message_id": str(payload.get("id", "")),
+            "guild_id": guild_id,
+            "reply_to": reply_to,
+        }
+        metadata.update(self._channel_runtime_metadata(channel_id))
+
         await self._handle_message(
             sender_id=sender_id,
             chat_id=channel_id,
             content="\n".join(p for p in content_parts if p) or "[empty message]",
             media=media_paths,
-            metadata={
-                "message_id": str(payload.get("id", "")),
-                "guild_id": guild_id,
-                "reply_to": reply_to,
-            },
+            metadata=metadata,
         )
 
     def _should_respond_in_group(self, payload: dict[str, Any], content: str) -> bool:
         """Check if bot should respond in a group channel based on policy."""
-        if self.config.group_policy == "open":
+        channel_id = str(payload.get("channel_id", ""))
+
+        if channel_id and channel_id in getattr(self.config, "mention_only_channel_ids", []):
+            policy = "mention"
+        elif channel_id and channel_id in getattr(self.config, "open_channel_ids", []):
+            policy = "open"
+        else:
+            policy = self.config.group_policy
+
+        if policy == "open":
             return True
 
-        if self.config.group_policy == "mention":
+        if policy == "mention":
             # Check if bot was mentioned in the message
             if self._bot_user_id:
                 # Check mentions array
@@ -348,6 +390,60 @@ class DiscordChannel(BaseChannel):
             return False
 
         return True
+
+    def _track_plan_message(self, resp_data: dict[str, Any], content: str) -> None:
+        """If the sent message is a plan, track its Discord message ID for reaction-based approval."""
+        import re
+        if "**Project Plan:" not in content:
+            return
+        # Extract project ID from content like: (id: `abc12345`)
+        match = re.search(r"\(id:\s*`([a-f0-9]+)`\)", content)
+        if match:
+            discord_msg_id = resp_data.get("id")
+            project_id = match.group(1)
+            if discord_msg_id:
+                self._plan_messages[discord_msg_id] = project_id
+                logger.info("Tracking plan message {} for project {}", discord_msg_id, project_id)
+
+    async def _handle_reaction_add(self, payload: dict[str, Any]) -> None:
+        """Handle reaction add events — approve plans on thumbs up."""
+        emoji = payload.get("emoji", {})
+        emoji_name = emoji.get("name", "")
+        message_id = str(payload.get("message_id", ""))
+        channel_id = str(payload.get("channel_id", ""))
+        user_id = str(payload.get("user_id", ""))
+
+        # Ignore bot's own reactions
+        if user_id == self._bot_user_id:
+            return
+
+        # Only handle thumbs up on tracked plan messages
+        if emoji_name not in ("👍", "thumbsup", "\U0001f44d"):
+            return
+
+        if message_id not in self._plan_messages:
+            return
+
+        if not self.is_allowed(user_id):
+            return
+
+        project_id = self._plan_messages.pop(message_id)
+        logger.info("Plan {} approved via 👍 reaction by user {}", project_id, user_id)
+
+        # Publish an inbound message that tells the agent to approve and run
+        from nanobot.bus.events import InboundMessage
+        approval_msg = InboundMessage(
+            channel="discord",
+            sender_id=user_id,
+            chat_id=channel_id,
+            content=(
+                f"[The user approved project plan `{project_id}` by reacting with 👍] "
+                f"Call dispatch(operation='approve', project_id='{project_id}') "
+                f"and then dispatch(operation='run', project_id='{project_id}') to start execution."
+            ),
+            metadata={"message_id": message_id, "reaction_approval": True},
+        )
+        await self.bus.publish_inbound(approval_msg)
 
     async def _start_typing(self, channel_id: str) -> None:
         """Start periodic typing indicator for a channel."""
