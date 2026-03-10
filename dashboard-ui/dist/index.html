@@ -173,6 +173,7 @@
                margin-top: 10px; font-size: 11px; color: #888; position: relative; cursor: default; transition: all 0.15s; }
   .arch-tmux:hover { border-color: #ff666660; }
   .arch-tmux:hover > .arch-tip { opacity: 1; pointer-events: auto; }
+  .arch-card:has(.arch-tmux:hover) > .arch-tip { opacity: 0 !important; pointer-events: none !important; }
   /* Specialized agents section */
   .arch-agents-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   .arch-agent-future { background: #0a0a0a; border: 1px dashed #333; border-radius: 8px; padding: 12px;
