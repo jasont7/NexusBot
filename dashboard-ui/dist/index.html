@@ -168,6 +168,11 @@
   .arch-tool p { font-size: 10px; color: #777; margin: 0; }
   /* Infrastructure row */
   .arch-infra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  /* tmux sub-block inside Engineer */
+  .arch-tmux { background: #110a0a; border: 1px solid #ff666620; border-radius: 6px; padding: 8px 12px;
+               margin-top: 10px; font-size: 11px; color: #888; position: relative; cursor: default; transition: all 0.15s; }
+  .arch-tmux:hover { border-color: #ff666660; }
+  .arch-tmux:hover > .arch-tip { opacity: 1; pointer-events: auto; }
   /* Specialized agents section */
   .arch-agents-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   .arch-agent-future { background: #0a0a0a; border: 1px dashed #333; border-radius: 8px; padding: 12px;
@@ -955,9 +960,15 @@ function renderArchDiagram(data) {
   h += '<div class="arch-channels">';
   allCh.forEach(ch => {
     const icon = icons[ch] || '\uD83D\uDCAC';
-    h += `<div class="arch-pill">${icon} ${esc(ch)}
-      <div class="arch-tip"><strong>${esc(ch)}</strong><br>${chInfo[ch] || 'Message channel'}</div>
-    </div>`;
+    if (ch === 'dashboard') {
+      h += `<div class="arch-pill" style="border-color:${C.blue}60; color:${C.blue}">${icon} Dashboard <span style="font-size:10px; opacity:0.7">port 18791</span>
+        <div class="arch-tip"><strong>Dashboard</strong><br>${chInfo[ch]}</div>
+      </div>`;
+    } else {
+      h += `<div class="arch-pill">${icon} ${esc(ch)}
+        <div class="arch-tip"><strong>${esc(ch)}</strong><br>${chInfo[ch] || 'Message channel'}</div>
+      </div>`;
+    }
   });
   h += `<div class="arch-pill" style="border-color:${C.green}60; color:${C.green}">\uD83D\uDC93 Heartbeat <span style="font-size:10px; opacity:0.7">every 30min</span>
     <div class="arch-tip"><strong>Heartbeat</strong><br>Periodic background task that fires every 30 minutes. Calls <code>agent.process_direct()</code> to trigger memory consolidation, session cleanup, and status checks. Keeps the agent aware of time passing between user messages.</div>
@@ -1044,15 +1055,16 @@ function renderArchDiagram(data) {
   // ── SPECIALIZED AGENTS ──
   h += '<div class="arch-arrow">\u2193 <span style="font-size:11px; color:#555">via dispatch tool</span></div>';
   h += `<div class="arch-section" style="border-color:${C.purple}30; background:#08080f; padding:14px 18px;">`;
-  h += `<div class="arch-section-head" style="color:${C.purple}">SPECIALIZED AGENTS <span>autonomous subagents that own entire domains \u2014 invoked on-demand, not every prompt. Each can spawn external processes, manage workflows, and coordinate parallel work independently of the main LLM loop.</span></div>`;
+  h += `<div class="arch-section-head" style="color:${C.purple}; flex-direction:column; align-items:flex-start; gap:4px;">SPECIALIZED AGENTS <span>Autonomous subagents that own entire domains \u2014 invoked on-demand, not every prompt. Each can spawn external processes, manage workflows, and coordinate parallel work independently of the main LLM loop.</span></div>`;
 
   // Engineer card with tmux nested inside
   h += `<div class="arch-card" style="border-color:${C.purple}40; background:#0a0a14; overflow:visible;">
     <h4 style="color:${C.purple}">Engineer</h4>
     <p>Decomposes engineering tasks into work items with dependency ordering, dispatches each to an isolated coding session, manages file locks to prevent conflicts, and harvests results.</p>
     <div class="arch-tip"><strong>Engineer</strong> (Specialized Agent)<br>The first specialized agent built for nanobot. Invoked via the <code>dispatch</code> tool when the main agent needs to execute multi-step engineering tasks. Breaks work into items with a dependency DAG, dispatches each to a tmux session running Claude Code or Codex, enforces file-level locks to prevent conflicts across concurrent sessions, and collects output + git diffs on completion.<br><br>Not called on every prompt \u2014 only when tasks require parallel coding sessions or complex multi-file changes.<span class="tip-path">nanobot/agent/engineer.py</span></div>
-    <div style="background:#110a0a; border:1px solid ${C.red}20; border-radius:6px; padding:8px 12px; margin-top:10px; font-size:11px; color:#888; pointer-events:auto; position:relative;">
+    <div class="arch-tmux">
       <strong style="color:${C.red}; font-size:12px;">\uD83E\uDDF5 tmux Sessions</strong> &middot; Claude Code / Codex &middot; max 3 concurrent &middot; polls every 15s &middot; sentinel detection
+      <div class="arch-tip" style="bottom:auto; top:calc(100% + 10px);"><strong>tmux Sessions</strong><br>The Engineer dispatches work items to isolated tmux sessions. Each runs <code>claude --print --permission-mode bypassPermissions --max-budget-usd 3.00</code> or Codex with instructions written to a temp file. Completion is detected via the <code>___NANOBOT_DONE___</code> sentinel marker. Output and git diffs are harvested and reported back to the main agent.<span class="tip-path">socket: $TMPDIR/nanobot-tmux-sockets/engineer.sock</span></div>
     </div>
   </div>`;
 
