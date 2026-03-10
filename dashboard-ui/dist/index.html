@@ -120,7 +120,8 @@
   .chat-input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
   .chat-typing { color: #4da6ff; font-size: 12px; padding: 4px 0; min-height: 20px; }
   /* Architecture diagram */
-  .arch { max-width: 960px; margin: 0 auto; padding: 20px 0; display: flex; flex-direction: column; gap: 6px; }
+  .arch { max-width: 1100px; margin: 0 auto; padding: 20px 0; display: flex; flex-direction: column; gap: 6px; }
+  .arch-root { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: start; }
   .arch-label { text-align: center; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 2px 0; }
   .arch-arrow { text-align: center; font-size: 20px; color: #444; line-height: 1; padding: 2px 0; }
   /* Channels row */
@@ -142,7 +143,8 @@
               box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-size: 12px; color: #ccc; line-height: 1.6; }
   .arch-tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
                      border: 6px solid transparent; border-top-color: #444; }
-  .arch-card:hover .arch-tip, .arch-pill:hover .arch-tip { opacity: 1; pointer-events: auto; }
+  .arch-card:hover > .arch-tip, .arch-pill:hover > .arch-tip, .arch-tool:hover > .arch-tip,
+  .arch-storage-item:hover > .arch-tip { opacity: 1; pointer-events: auto; }
   .arch-tip strong { color: #fff; }
   .arch-tip code { background: #111; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #aaa; }
   .arch-tip .tip-path { color: #666; font-size: 11px; margin-top: 6px; display: block; }
@@ -154,35 +156,29 @@
   .arch-cycle-feedback { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
                           justify-content: center; padding: 6px 0 0; color: #555; font-size: 12px; }
   .arch-cycle-feedback hr { flex: 1; border: none; border-top: 1px dashed #333; }
+  /* Tools section within agent loop */
+  .arch-tools-section { border: 1px solid #ffaa4430; border-radius: 10px; padding: 12px 14px; margin-top: 8px; background: #0c0a06; }
+  .arch-tools-section-head { font-size: 12px; font-weight: 700; color: #ffaa44; margin-bottom: 8px; }
   /* Tools grid */
   .arch-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .arch-tool { background: #111; border: 1px solid; border-radius: 8px; padding: 10px; text-align: center;
                position: relative; transition: all 0.15s; cursor: default; }
   .arch-tool:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-  .arch-tool:hover .arch-tip { opacity: 1; }
   .arch-tool h5 { font-size: 12px; font-weight: 600; margin: 0 0 2px; }
   .arch-tool p { font-size: 10px; color: #777; margin: 0; }
   /* Infrastructure row */
-  .arch-infra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .arch-infra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   /* Specialized agents section */
   .arch-agents-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-  .arch-agent-main { grid-column: 1 / -1; }
   .arch-agent-future { background: #0a0a0a; border: 1px dashed #333; border-radius: 8px; padding: 12px;
                         text-align: center; color: #444; font-size: 12px; display:flex; align-items:center;
                         justify-content:center; gap: 6px; }
-  .arch-tmux-sub { background: #110a0a; border: 1px solid #ff666620; border-radius: 6px; padding: 8px 12px;
-                    margin-top: 8px; font-size: 11px; color: #888; }
-  .arch-tmux-sub strong { color: #ff6666; font-size: 12px; }
-  /* Background services */
-  .arch-bg-services { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
-  /* Services row - unused, kept for compat */
-  .arch-services { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; }
-  /* Storage grid */
-  .arch-storage { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-  .arch-storage-item { background: #111; border: 1px solid #ffaa4440; border-radius: 6px; padding: 8px;
+  /* Storage sidebar (vertical) */
+  .arch-storage-sidebar { display: flex; flex-direction: column; gap: 8px; }
+  .arch-storage-sidebar .arch-section-head { font-size: 12px; }
+  .arch-storage-item { background: #111; border: 1px solid #ffaa4440; border-radius: 6px; padding: 10px;
                         text-align: center; cursor: pointer; position: relative; transition: all 0.15s; }
   .arch-storage-item:hover { border-color: #ffaa44; transform: translateY(-1px); }
-  .arch-storage-item:hover .arch-tip { opacity: 1; }
   .arch-storage-item h5 { font-size: 11px; font-weight: 600; color: #ddd; margin: 0 0 2px; }
   .arch-storage-item p { font-size: 10px; color: #666; margin: 0; }
   /* Section wrappers */
@@ -202,16 +198,15 @@
     .config-bar input { max-width: 100%; }
     .brain-grid { grid-template-columns: 1fr; }
     .chat-msg { max-width: 95%; }
+    .arch-root { grid-template-columns: 1fr; }
+    .arch-storage-sidebar { flex-direction: row; flex-wrap: wrap; }
+    .arch-storage-item { flex: 1; min-width: 120px; }
     .arch-cycle { grid-template-columns: 1fr; grid-template-rows: auto; }
     .arch-cycle-arrow { transform: rotate(90deg); }
     .arch-cycle-feedback { display: none; }
     .arch-tools { grid-template-columns: repeat(2, 1fr); }
-    .arch-storage { grid-template-columns: repeat(2, 1fr); }
-    .arch-services { grid-template-columns: 1fr; }
     .arch-infra { grid-template-columns: 1fr; }
     .arch-agents-grid { grid-template-columns: 1fr; }
-    .arch-agent-main { grid-column: 1; }
-    .arch-bg-services { grid-template-columns: 1fr; }
     .arch-tip { width: 220px; }
   }
 </style>
@@ -884,7 +879,7 @@ function renderArchDiagram(data) {
     slack: 'Slack Events API via WebSocket. Supports blocks, threads, and app mentions.',
     whatsapp: 'WhatsApp Business API. Supports text, media messages, and templates.',
     email: 'IMAP polling + SMTP sending. Parses email threads into conversation context.',
-    dashboard: 'This web UI. Connects via REST API + WebSocket at /api/ws for real-time updates. Port 18791.',
+    dashboard: 'This web UI + aiohttp API server on port 18791. REST API + WebSocket at <code>/api/ws</code> for real-time updates. Can inject messages directly into the agent loop via <code>agent.process_direct()</code>. Also serves project status, brain file editing, and chat endpoints.',
     matrix: 'Matrix protocol via matrix-nio. End-to-end encrypted rooms supported.',
     cli: 'Local command-line interface for direct interaction.',
   };
@@ -936,9 +931,25 @@ function renderArchDiagram(data) {
 
   let h = '<div class="arch">';
 
-  // ── NANOBOT GATEWAY (outer container) ──
+  // ── Side-by-side layout: Storage (left) | Gateway (right) ──
+  h += '<div class="arch-root">';
+
+  // ── PERSISTENT STORAGE (left sidebar, vertical) ──
+  h += `<div class="arch-storage-sidebar arch-section" style="border-color:${C.orange}30; border-style:dashed; background:#100e08; padding:12px 14px;">`;
+  h += `<div class="arch-section-head" style="color:${C.orange}">PERSISTENT STORAGE <span style="display:block; margin-top:2px;">~/.nanobot/workspace/</span></div>`;
+  storage.forEach(item => {
+    h += `<div class="arch-storage-item" onclick="showTab('brain')" title="View in Brain tab">
+      <h5>${esc(item.name)}</h5><p>${esc(item.desc)}</p>
+      <div class="arch-tip" style="left:0; transform:none;">${item.info}</div>
+    </div>`;
+  });
+  h += `<div style="font-size:10px; color:#555; text-align:center; margin-top:4px;">on disk &middot; shared by all components</div>`;
+  h += '</div>';
+
+  // ── NANOBOT GATEWAY (right, main column) ──
+  h += `<div style="display:flex; flex-direction:column; gap:6px;">`;
   h += `<div class="arch-section" style="border-color:#ffffff15; background:#060606; padding:16px 18px;">`;
-  h += `<div class="arch-section-head" style="color:#ccc">NANOBOT GATEWAY <span>single Python process \u00b7 pure asyncio \u00b7 <code>nanobot gateway --port 18790</code></span></div>`;
+  h += `<div class="arch-section-head" style="color:#ccc">NANOBOT GATEWAY <span>single Python process &middot; pure asyncio &middot; <code>nanobot gateway --port 18790</code></span></div>`;
 
   // ── MESSAGE SOURCES (unified pills) ──
   h += '<div class="arch-channels">';
@@ -969,7 +980,7 @@ function renderArchDiagram(data) {
   h += `<div class="arch-section" style="border-color:${C.green}40; background:#0a120a;">`;
   h += `<div class="arch-section-head" style="color:${C.green}">AGENT LOOP <span>consumes inbound \u2192 builds context \u2192 calls LLM \u2192 executes tools \u2192 publishes outbound</span></div>`;
 
-  // ── Cycle: ContextBuilder → LLM → ToolLoop (with feedback) ──
+  // ── Cycle: ContextBuilder -> LLM -> ToolLoop (with feedback) ──
   h += '<div class="arch-cycle">';
 
   // ContextBuilder (left)
@@ -991,7 +1002,7 @@ function renderArchDiagram(data) {
   h += `<div class="arch-card" style="border-color:${C.yellow}40;">
     <h4 style="color:${C.yellow}">LLM Provider</h4>
     <p style="margin-bottom:6px">Auto-matched via LiteLLM:</p>
-    <div style="font-size:12px; line-height:1.8; color:#bbb;">Anthropic \u00b7 OpenAI \u00b7 DeepSeek \u00b7 Gemini<br>OpenRouter \u00b7 Moonshot \u00b7 +10 more</div>
+    <div style="font-size:12px; line-height:1.8; color:#bbb;">Anthropic &middot; OpenAI &middot; DeepSeek &middot; Gemini<br>OpenRouter &middot; Moonshot &middot; +10 more</div>
     <div class="arch-tip"><strong>LLM Provider</strong><br>Unified interface to 16+ LLM providers via LiteLLM. Auto-detects provider from model name in config. Supports streaming, tool calls, vision, and extended thinking. Handles retries, rate limits, and fallback models.<span class="tip-path">nanobot/providers/</span></div>
   </div>`;
 
@@ -1000,8 +1011,10 @@ function renderArchDiagram(data) {
 
   h += '</div>'; // end arch-cycle
 
-  // ── Tools Grid ──
-  h += '<div class="arch-tools" style="margin-top:8px;">';
+  // ── TOOLS (grouped section) ──
+  h += '<div class="arch-tools-section">';
+  h += '<div class="arch-tools-section-head">TOOLS</div>';
+  h += '<div class="arch-tools">';
   tools.forEach(t => {
     h += `<div class="arch-tool" style="border-color:${t.color}40;">
       <h5 style="color:${t.color}">${t.icon} ${esc(t.name)}</h5>
@@ -1011,8 +1024,8 @@ function renderArchDiagram(data) {
   });
   h += '</div>';
 
-  // ── Memory + Session ──
-  h += '<div class="arch-infra" style="margin-top:8px;">';
+  // ── Memory + Session (inside tools section) ──
+  h += '<div class="arch-infra">';
   h += `<div class="arch-card clickable" style="border-color:${C.yellow}40; text-align:center; padding:10px;" onclick="showTab('brain'); editBrainFile('MEMORY.md')" title="Edit in Brain tab">
     <h4 style="color:${C.yellow}; font-size:13px">MemoryStore</h4>
     <p>consolidate() \u2192 MEMORY.md + HISTORY.md</p>
@@ -1024,6 +1037,7 @@ function renderArchDiagram(data) {
     <div class="arch-tip"><strong>SessionManager</strong><br>Maintains separate conversation histories per channel and DM. Each session is a JSONL file with messages, tool calls, and metadata. Sessions are loaded into context to maintain conversational continuity.<span class="tip-path">nanobot/session/manager.py</span></div>
   </div>`;
   h += '</div>';
+  h += '</div>'; // end TOOLS section
 
   h += '</div>'; // end AGENT LOOP
 
@@ -1032,45 +1046,32 @@ function renderArchDiagram(data) {
   h += `<div class="arch-section" style="border-color:${C.purple}30; background:#08080f; padding:14px 18px;">`;
   h += `<div class="arch-section-head" style="color:${C.purple}">SPECIALIZED AGENTS <span>invoked on-demand by the agent loop \u2014 not every prompt</span></div>`;
 
-  // Engineer (main agent)
-  h += `<div class="arch-card arch-agent-main" style="border-color:${C.purple}40; background:#0a0a14;">
+  // Engineer card (separate from tmux)
+  h += `<div class="arch-card" style="border-color:${C.purple}40; background:#0a0a14;">
     <h4 style="color:${C.purple}">Engineer</h4>
     <p>Decomposes engineering tasks into work items with dependency ordering, dispatches each to an isolated coding session, manages file locks to prevent conflicts, and harvests results.</p>
-    <div class="arch-tip"><strong>Engineer</strong> (Specialized Agent)<br>The first specialized agent built for nanobot. Invoked via the <code>dispatch</code> tool when the main agent needs to execute multi-step engineering tasks. Breaks work into items with a dependency DAG, dispatches each to a tmux session running Claude Code or Codex, enforces file-level locks to prevent conflicts across concurrent sessions, and collects output + git diffs on completion.<br><br>Not called on every prompt \u2014 only when tasks require parallel coding sessions or complex multi-file changes.<span class="tip-path">nanobot/agent/orchestrator.py</span></div>
-    <div class="arch-tmux-sub">
-      <strong>tmux sessions</strong> \u00b7 Claude Code / Codex \u00b7 max 3 concurrent \u00b7 polls every 15s \u00b7 sentinel detection
-      <div class="arch-tip" style="bottom:auto; top:calc(100% + 10px);"><strong>tmux Sessions</strong><br>The Engineer dispatches work items to isolated tmux sessions. Each runs <code>claude --print --permission-mode bypassPermissions --max-budget-usd 3.00</code> or Codex with instructions written to a temp file. Completion is detected via the <code>___NANOBOT_DONE___</code> sentinel marker. Output and git diffs are harvested and reported back to the main agent.<span class="tip-path">socket: $TMPDIR/nanobot-tmux-sockets/orchestrator.sock</span></div>
-    </div>
+    <div class="arch-tip"><strong>Engineer</strong> (Specialized Agent)<br>The first specialized agent built for nanobot. Invoked via the <code>dispatch</code> tool when the main agent needs to execute multi-step engineering tasks. Breaks work into items with a dependency DAG, dispatches each to a tmux session running Claude Code or Codex, enforces file-level locks to prevent conflicts across concurrent sessions, and collects output + git diffs on completion.<br><br>Not called on every prompt \u2014 only when tasks require parallel coding sessions or complex multi-file changes.<span class="tip-path">nanobot/agent/engineer.py</span></div>
+  </div>`;
+
+  // tmux sessions (separate card with clear visual separation)
+  h += `<div class="arch-card" style="border-color:${C.red}30; background:#110a0a; margin-top:8px;">
+    <h4 style="color:${C.red}; font-size:13px">\uD83E\uDDF5 tmux Sessions</h4>
+    <p>Claude Code / Codex &middot; max 3 concurrent &middot; polls every 15s &middot; sentinel detection</p>
+    <div class="arch-tip"><strong>tmux Sessions</strong><br>The Engineer dispatches work items to isolated tmux sessions. Each runs <code>claude --print --permission-mode bypassPermissions --max-budget-usd 3.00</code> or Codex with instructions written to a temp file. Completion is detected via the <code>___NANOBOT_DONE___</code> sentinel marker. Output and git diffs are harvested and reported back to the main agent.<span class="tip-path">socket: $TMPDIR/nanobot-tmux-sockets/engineer.sock</span></div>
   </div>`;
 
   // Future agents (grayed out placeholders)
-  h += '<div class="arch-agents-grid">';
-  h += '<div class="arch-agent-future">Researcher <span style="color:#333">\u00b7 coming soon</span></div>';
-  h += '<div class="arch-agent-future">Marketer <span style="color:#333">\u00b7 coming soon</span></div>';
+  h += '<div class="arch-agents-grid" style="margin-top:8px;">';
+  h += '<div class="arch-agent-future">Researcher <span style="color:#333">&middot; coming soon</span></div>';
+  h += '<div class="arch-agent-future">Marketer <span style="color:#333">&middot; coming soon</span></div>';
   h += '</div>';
 
   h += '</div>'; // end SPECIALIZED AGENTS
 
-  // ── DASHBOARD SERVER (its own card inside gateway) ──
-  h += `<div class="arch-card" style="border-color:${C.blue}40; background:#080810; text-align:center; padding:12px 16px; margin-top:6px;">
-    <h4 style="color:${C.blue}">Dashboard Server</h4>
-    <p>aiohttp \u00b7 port 18791 \u00b7 REST API + WebSocket \u00b7 can inject messages via <code>agent.process_direct()</code></p>
-    <div class="arch-tip"><strong>Dashboard Server</strong><br>aiohttp web server on port 18791. Serves REST API for project status, architecture info, brain file editing, and chat. WebSocket at <code>/api/ws</code> pushes real-time updates. Can also inject messages directly into the agent loop via <code>agent.process_direct()</code>. This UI connects to it.<span class="tip-path">nanobot/dashboard/server.py</span></div>
-  </div>`;
+  h += '</div>'; // end NANOBOT GATEWAY section
 
-  h += '</div>'; // end NANOBOT GATEWAY
-
-  // ── PERSISTENT STORAGE (outside gateway) ──
-  h += `<div class="arch-section" style="border-color:${C.orange}30; border-style:dashed; background:#100e08; padding:12px 16px; margin-top:6px;">`;
-  h += `<div class="arch-section-head" style="color:${C.orange}">PERSISTENT STORAGE <span>~/.nanobot/workspace/ \u2014 on disk, shared by all components</span></div>`;
-  h += '<div class="arch-storage">';
-  storage.forEach(item => {
-    h += `<div class="arch-storage-item" onclick="showTab('brain')" title="View in Brain tab">
-      <h5>${esc(item.name)}</h5><p>${esc(item.desc)}</p>
-      <div class="arch-tip">${item.info}</div>
-    </div>`;
-  });
-  h += '</div></div>';
+  h += '</div>'; // end gateway column
+  h += '</div>'; // end arch-root
 
   // ── Footnote + Legend ──
   h += `<div class="arch-footnote">Remote: Cloudflare Tunnel \u2192 nanobot-api.pinpointlabs.io \u2192 localhost:18791</div>`;
