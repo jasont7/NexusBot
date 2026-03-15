@@ -584,6 +584,9 @@ class AgentLoop:
     ) -> str:
         """Process a message directly (for CLI or cron usage)."""
         await self._connect_mcp()
+        self._record_activity("message_in", channel=channel, sender="user", preview=content[:100])
         msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
         response = await self._process_message(msg, session_key=session_key, on_progress=on_progress)
-        return response.content if response else ""
+        result = response.content if response else ""
+        self._record_activity("message_out", channel=channel, preview=result[:100])
+        return result
