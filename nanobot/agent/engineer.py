@@ -11,6 +11,7 @@ from typing import Any
 
 from loguru import logger
 
+from nanobot.agent.specialized import SpecializedAgent
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 
@@ -62,29 +63,53 @@ class Project:
     use_worktrees: bool = False  # Enable git worktrees for parallel work on overlapping files
 
 
-class Engineer:
+class Engineer(SpecializedAgent):
     """Manages projects and their work items, dispatching to Claude Code / Codex via tmux."""
 
     def __init__(self, workspace: Path, bus: MessageBus):
-        self.workspace = workspace
-        self.bus = bus
-        self.projects_dir = workspace / "engineer" / "projects"
+        super().__init__(name="engineer", workspace=workspace, bus=bus)
+        self.projects_dir = self._workspace_dir / "projects"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         os.makedirs(TEMP_DIR, exist_ok=True)
         os.makedirs(SOCKET_DIR, exist_ok=True)
         self._polling_task: asyncio.Task | None = None
         self._projects: dict[str, Project] = {}
         self._file_locks: dict[str, str] = {}  # file_path -> work_item_id
-        self._dashboard: Any | None = None  # Set by DashboardServer after init
         self._load_projects()
 
     async def _notify_dashboard(self, project_id: str) -> None:
         """Notify the dashboard of a project state change."""
-        if self._dashboard and hasattr(self._dashboard, "notify_project_update"):
-            try:
-                await self._dashboard.notify_project_update(project_id)
-            except Exception:
-                pass
+        await self.notify_dashboard("project_updated", {"project_id": project_id})
+
+    # ── SpecializedAgent interface ────────────────────────────────
+
+    async def execute(self, operation: str, **kwargs: Any) -> str:
+        """Execute an engineer operation (delegated from dispatch tool)."""
+        if operation == "status":
+            pid = kwargs.get("project_id")
+            if pid:
+                return self.get_status(pid)
+            projects = self.list_projects()
+            if not projects:
+                return "No projects."
+            return "\n\n".join(self.get_status(p.id) for p in projects[-3:])
+        elif operation == "list":
+            projects = self.list_projects()
+            if not projects:
+                return "No projects."
+            lines = []
+            for p in projects:
+                done = sum(1 for wi in p.work_items if wi.state == "done")
+                lines.append(f"- `{p.id}` **{p.title}** [{p.state}] ({done}/{len(p.work_items)} done)")
+            return "\n".join(lines)
+        return f"Unknown operation: {operation}"
+
+    def status_summary(self) -> str:
+        """Return a short status summary."""
+        projects = self.list_projects()
+        running = sum(1 for p in projects if p.state == "running")
+        total = len(projects)
+        return f"{total} projects ({running} running)"
 
     # ── Persistence ──────────────────────────────────────────────
 

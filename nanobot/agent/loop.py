@@ -14,11 +14,13 @@ from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryStore
+from nanobot.agent.registry import AgentRegistry
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
+from nanobot.agent.tools.self_upgrade import SelfUpgradeTool
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.dispatch import DispatchTool
 from nanobot.agent.tools.spawn import SpawnTool
@@ -29,7 +31,7 @@ from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig
+    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, GitHubAgentConfig, ResearchConfig, TwitterConfig
     from nanobot.cron.service import CronService
 
 
@@ -66,10 +68,16 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        twitter_config: TwitterConfig | None = None,
+        research_config: ResearchConfig | None = None,
+        github_agent_config: GitHubAgentConfig | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.bus = bus
         self.channels_config = channels_config
+        self.twitter_config = twitter_config
+        self.research_config = research_config
+        self.github_agent_config = github_agent_config
         self.provider = provider
         self.workspace = workspace
         self.model = model or provider.get_default_model()
@@ -85,11 +93,22 @@ class AgentLoop:
         self.restrict_to_workspace = restrict_to_workspace
 
         from nanobot.agent.engineer import Engineer
+        from nanobot.agent.email_pa import EmailPAAgent
+        from nanobot.agent.twitter import TwitterAgent
+        from nanobot.config.schema import TwitterConfig as _TC
 
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
+        self.agents = AgentRegistry()
         self.engineer = Engineer(workspace=workspace, bus=bus)
+        self.agents.register(self.engineer)
+        self.twitter_agent = TwitterAgent(
+            workspace=workspace, bus=bus, config=twitter_config or _TC(),
+        )
+        self.agents.register(self.twitter_agent)
+        self.email_pa = EmailPAAgent(workspace=workspace, bus=bus)
+        self.agents.register(self.email_pa)
         self.subagents = SubagentManager(
             provider=provider,
             workspace=workspace,
@@ -114,6 +133,9 @@ class AgentLoop:
         self._consolidation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._processing_lock = asyncio.Lock()
+        from collections import deque
+        self.activity_log: deque[dict] = deque(maxlen=200)
+        self._activity_broadcast: Callable[[dict], Awaitable[None]] | None = None
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
@@ -131,9 +153,40 @@ class AgentLoop:
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
+        from nanobot.agent.tools.email_triage import EmailTriageTool
+        from nanobot.agent.tools.research import ResearchTool
+        from nanobot.agent.tools.twitter import TwitterTool
         self.tools.register(DispatchTool(engineer=self.engineer))
+        self.tools.register(TwitterTool(agent=self.twitter_agent))
+        self.tools.register(EmailTriageTool(agent=self.email_pa))
+        from nanobot.config.schema import ResearchConfig as _RC
+        self.tools.register(ResearchTool(
+            config=self.research_config or _RC(),
+            workspace=self.workspace,
+            brave_api_key=self.brave_api_key,
+            web_proxy=self.web_proxy,
+        ))
+        from nanobot.agent.tools.github_scan import GitHubScanTool
+        from nanobot.config.schema import GitHubAgentConfig as _GC
+        self.tools.register(GitHubScanTool(
+            config=self.github_agent_config or _GC(),
+            workspace=self.workspace,
+            web_proxy=self.web_proxy,
+        ))
+        self.tools.register(SelfUpgradeTool())
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+
+    def _record_activity(self, event_type: str, **data: Any) -> None:
+        """Record an activity event to the ring buffer and broadcast via WebSocket."""
+        import time
+        entry = {"type": event_type, "ts": time.time(), **data}
+        self.activity_log.append(entry)
+        if self._activity_broadcast:
+            try:
+                asyncio.get_running_loop().create_task(self._activity_broadcast(entry))
+            except RuntimeError:
+                pass
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -242,7 +295,9 @@ class AgentLoop:
                     tools_used.append(tool_call.name)
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
+                    self._record_activity("tool_call", tool=tool_call.name, args=args_str[:200])
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    self._record_activity("tool_result", tool=tool_call.name, result=str(result)[:200])
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
@@ -311,10 +366,12 @@ class AgentLoop:
 
     async def _dispatch(self, msg: InboundMessage) -> None:
         """Process a message under the global lock."""
+        self._record_activity("message_in", channel=msg.channel, sender=msg.sender_id, preview=msg.content[:100])
         async with self._processing_lock:
             try:
                 response = await self._process_message(msg)
                 if response is not None:
+                    self._record_activity("message_out", channel=response.channel, preview=(response.content or "")[:100])
                     await self.bus.publish_outbound(response)
                 elif msg.channel == "cli":
                     await self.bus.publish_outbound(OutboundMessage(

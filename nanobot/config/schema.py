@@ -322,6 +322,43 @@ class MCPServerConfig(Base):
     tool_timeout: int = 30  # seconds before a tool call is cancelled
 
 
+class SystemConfig(Base):
+    """System-level configuration for self-upgrade and repo management."""
+
+    upstream_repo: str = "origin"  # Git remote name for upstream
+    auto_upgrade: bool = False  # Automatically pull + restart on heartbeat
+    repo_dir: str = ""  # Path to nanobot repo (auto-detected if empty)
+
+
+class TwitterConfig(Base):
+    """Twitter/X agent configuration."""
+
+    api_key: str = ""
+    api_secret: str = ""
+    access_token: str = ""
+    access_secret: str = ""
+    bearer_token: str = ""
+    target_niche: str = ""  # e.g. "AI/ML engineering"
+    scan_interval_min: int = 30
+    style_profiles: list[str] = Field(default_factory=list)  # @handles to analyze for style
+
+
+class ResearchConfig(Base):
+    """Research agent configuration."""
+
+    exa_api_key: str = ""
+    obsidian_vault_path: str = "~/Documents/JThomoVault"
+    grok_api_key: str = ""
+    gemini_api_key: str = ""
+
+
+class GitHubAgentConfig(Base):
+    """GitHub scanning agent configuration."""
+
+    scan_topics: list[str] = Field(default_factory=lambda: ["AI", "LLM", "agents"])
+    scan_schedule: str = "0 8 * * *"  # Daily at 8am
+
+
 class ToolsConfig(Base):
     """Tools configuration."""
 
@@ -339,6 +376,10 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    system: SystemConfig = Field(default_factory=SystemConfig)
+    twitter: TwitterConfig = Field(default_factory=TwitterConfig)
+    research: ResearchConfig = Field(default_factory=ResearchConfig)
+    github_agent: GitHubAgentConfig = Field(default_factory=GitHubAgentConfig)
 
     @property
     def workspace_path(self) -> Path:

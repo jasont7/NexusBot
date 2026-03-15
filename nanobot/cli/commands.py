@@ -324,6 +324,9 @@ def gateway(
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        twitter_config=config.twitter,
+        research_config=config.research,
+        github_agent_config=config.github_agent,
     )
 
     # Set cron callback (needs agent)
@@ -434,8 +437,10 @@ def gateway(
 
     # Dashboard server
     from nanobot.dashboard.server import DashboardServer
-    dashboard = DashboardServer(engineer=agent.engineer, agent_loop=agent, host="0.0.0.0", port=port + 1)
-    agent.engineer._dashboard = dashboard
+    dashboard = DashboardServer(engineer=agent.engineer, agent_loop=agent, host="0.0.0.0", port=port + 1, agent_registry=agent.agents)
+    # Set dashboard reference on all registered agents
+    for a in agent.agents.all().values():
+        a._dashboard = dashboard
     console.print(f"[green]✓[/green] Dashboard: http://localhost:{port + 1}")
 
     async def run():

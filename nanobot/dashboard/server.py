@@ -11,6 +11,7 @@ from loguru import logger
 if TYPE_CHECKING:
     from nanobot.agent.loop import AgentLoop
     from nanobot.agent.engineer import Engineer
+    from nanobot.agent.registry import AgentRegistry
 
 # Bootstrap files that form the system prompt (order matters)
 BRAIN_FILES = ["SOUL.md", "USER.md", "AGENTS.md", "TOOLS.md", "HEARTBEAT.md"]
@@ -19,14 +20,19 @@ BRAIN_FILES = ["SOUL.md", "USER.md", "AGENTS.md", "TOOLS.md", "HEARTBEAT.md"]
 class DashboardServer:
     """Serves the dashboard API and static frontend."""
 
-    def __init__(self, engineer: "Engineer", agent_loop: "AgentLoop | None" = None, host: str = "0.0.0.0", port: int = 18791):
+    def __init__(self, engineer: "Engineer", agent_loop: "AgentLoop | None" = None,
+                 host: str = "0.0.0.0", port: int = 18791,
+                 agent_registry: "AgentRegistry | None" = None):
         self.engineer = engineer
         self.agent_loop = agent_loop
+        self.agent_registry = agent_registry
         self.host = host
         self.port = port
         self._app = web.Application()
         self._ws_clients: list[web.WebSocketResponse] = []
         self._chat_lock = asyncio.Lock()  # Serialize chat requests (agent is single-threaded)
+        if self.agent_loop:
+            self.agent_loop._activity_broadcast = self._broadcast_activity
         self._setup_routes()
 
     def _setup_routes(self) -> None:
@@ -54,6 +60,54 @@ class DashboardServer:
         self._app.router.add_post("/api/chat", self._handle_chat)
         self._app.router.add_get("/api/chat/history", self._handle_chat_history)
 
+        # Agents registry
+        self._app.router.add_get("/api/agents", self._handle_list_agents)
+        self._app.router.add_get("/api/agents/{name}/state", self._handle_agent_state)
+        self._app.router.add_post("/api/agents/{name}/action", self._handle_agent_action)
+
+        # System endpoints
+        self._app.router.add_get("/api/system/health", self._handle_system_health)
+        self._app.router.add_get("/api/system/git", self._handle_system_git)
+        self._app.router.add_post("/api/system/upgrade", self._handle_system_upgrade)
+        self._app.router.add_get("/api/system/activity", self._handle_activity_history)
+
+        # Brain graph
+        self._app.router.add_get("/api/brain/graph", self._handle_brain_graph)
+
+        # Research endpoints
+        self._app.router.add_get("/api/research/results", self._handle_research_results)
+        self._app.router.add_get("/api/research/notes", self._handle_research_notes)
+        self._app.router.add_post("/api/research/capture", self._handle_research_capture)
+
+        # Email PA endpoints
+        self._app.router.add_get("/api/email/triage", self._handle_email_triage)
+        self._app.router.add_get("/api/email/drafts", self._handle_email_drafts)
+        self._app.router.add_post("/api/email/drafts/{draft_id}/send", self._handle_email_send_draft)
+        self._app.router.add_delete("/api/email/drafts/{draft_id}", self._handle_email_discard_draft)
+        self._app.router.add_get("/api/email/actions", self._handle_email_actions)
+        self._app.router.add_post("/api/email/actions/{action_id}/undo", self._handle_email_undo)
+        self._app.router.add_get("/api/email/rules", self._handle_email_rules)
+        self._app.router.add_get("/api/email/snoozed", self._handle_email_snoozed)
+
+        # Twitter endpoints
+        self._app.router.add_get("/api/twitter/feed", self._handle_twitter_feed)
+        self._app.router.add_get("/api/twitter/stories", self._handle_twitter_stories)
+        self._app.router.add_get("/api/twitter/queue", self._handle_twitter_queue)
+        self._app.router.add_post("/api/twitter/queue/{draft_id}/approve", self._handle_twitter_approve)
+        self._app.router.add_post("/api/twitter/queue/{draft_id}/edit", self._handle_twitter_edit)
+        self._app.router.add_delete("/api/twitter/queue/{draft_id}", self._handle_twitter_reject)
+        self._app.router.add_post("/api/twitter/queue/{draft_id}/post", self._handle_twitter_post)
+        self._app.router.add_get("/api/twitter/performance", self._handle_twitter_performance)
+        self._app.router.add_get("/api/twitter/style", self._handle_twitter_style)
+        self._app.router.add_put("/api/twitter/style", self._handle_twitter_put_style)
+
+        # GitHub agent endpoints
+        self._app.router.add_get("/api/github/trending", self._handle_github_trending)
+        self._app.router.add_get("/api/github/insights", self._handle_github_insights)
+        self._app.router.add_get("/api/github/scans", self._handle_github_scans)
+        self._app.router.add_post("/api/github/search", self._handle_github_search)
+        self._app.router.add_post("/api/github/analyze", self._handle_github_analyze)
+
         # Architecture diagram
         self._app.router.add_get("/api/architecture", self._handle_architecture)
 
@@ -74,7 +128,7 @@ class DashboardServer:
         else:
             resp = await handler(request)
         resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
 
@@ -491,6 +545,509 @@ class DashboardServer:
 
         # Return last 50 messages
         return web.json_response(messages[-50:])
+
+    # ── Agents Registry Handlers ────────────────────────────────
+
+    async def _handle_list_agents(self, request: web.Request) -> web.Response:
+        """List all registered agents and their status."""
+        if not self.agent_registry:
+            return web.json_response([])
+        return web.json_response(self.agent_registry.status())
+
+    async def _handle_agent_state(self, request: web.Request) -> web.Response:
+        """Get a specific agent's state."""
+        name = request.match_info["name"]
+        if not self.agent_registry:
+            return web.json_response({"error": "No agent registry"}, status=503)
+        agent = self.agent_registry.get(name)
+        if not agent:
+            return web.json_response({"error": f"Agent '{name}' not found"}, status=404)
+        return web.json_response(agent.get_state())
+
+    async def _handle_agent_action(self, request: web.Request) -> web.Response:
+        """Trigger an operation on a specific agent."""
+        name = request.match_info["name"]
+        if not self.agent_registry:
+            return web.json_response({"error": "No agent registry"}, status=503)
+        agent = self.agent_registry.get(name)
+        if not agent:
+            return web.json_response({"error": f"Agent '{name}' not found"}, status=404)
+        body = await request.json()
+        operation = body.get("operation", "")
+        kwargs = {k: v for k, v in body.items() if k != "operation"}
+        try:
+            result = await agent.execute(operation, **kwargs)
+            return web.json_response({"result": result})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ── System Handlers ───────────────────────────────────────────
+
+    async def _handle_system_health(self, request: web.Request) -> web.Response:
+        """System health: uptime, memory, active agents."""
+        import os
+        import time
+        import psutil
+        try:
+            process = psutil.Process(os.getpid())
+            mem_mb = process.memory_info().rss / 1024 / 1024
+            uptime_s = time.time() - process.create_time()
+        except Exception:
+            mem_mb = 0
+            uptime_s = 0
+
+        agents = self.agent_registry.status() if self.agent_registry else []
+        return web.json_response({
+            "uptime_seconds": round(uptime_s),
+            "memory_mb": round(mem_mb, 1),
+            "agents": agents,
+            "ws_clients": len(self._ws_clients),
+        })
+
+    async def _handle_system_git(self, request: web.Request) -> web.Response:
+        """Current commit and upstream delta."""
+        from nanobot.agent.tools.self_upgrade import SelfUpgradeTool
+        tool = SelfUpgradeTool()
+        result = await tool.execute(operation="status")
+        return web.json_response({"status": result})
+
+    async def _handle_system_upgrade(self, request: web.Request) -> web.Response:
+        """Trigger self-upgrade check + pull + restart."""
+        from nanobot.agent.tools.self_upgrade import SelfUpgradeTool
+        tool = SelfUpgradeTool()
+        check = await tool.execute(operation="check")
+        if "up to date" in check.lower():
+            return web.json_response({"result": check, "action": "none"})
+        pull = await tool.execute(operation="pull")
+        if "failed" in pull.lower() or "error" in pull.lower():
+            return web.json_response({"result": pull, "action": "pull_failed"})
+        test = await tool.execute(operation="test")
+        if "FAILED" in test:
+            return web.json_response({"result": f"Pull succeeded but tests failed:\n{test}", "action": "test_failed"})
+        restart = tool._restart()
+        return web.json_response({"result": f"{pull}\n{test}\n{restart}", "action": "restarting"})
+
+    # ── Activity + Brain Graph Handlers ──────────────────────────
+
+    async def _broadcast_activity(self, entry: dict) -> None:
+        """Broadcast an activity event to all WebSocket clients."""
+        await self._broadcast({"type": "activity", **entry})
+
+    async def _handle_activity_history(self, request: web.Request) -> web.Response:
+        """Return the activity ring buffer."""
+        if not self.agent_loop:
+            return web.json_response([])
+        return web.json_response(list(self.agent_loop.activity_log))
+
+    async def _handle_brain_graph(self, request: web.Request) -> web.Response:
+        """Return brain files + skills as a knowledge graph with cross-reference edges."""
+        import re
+        workspace = self.engineer.workspace
+        nodes = []
+        file_contents: dict[str, str] = {}
+
+        # Brain files
+        for fname in BRAIN_FILES + ["MEMORY.md", "HISTORY.md"]:
+            fpath = workspace / fname
+            if fpath.exists():
+                content = fpath.read_text(errors="replace")
+                nodes.append({"id": fname, "type": "brain", "size": len(content), "group": "bootstrap"})
+                file_contents[fname] = content
+
+        # NEXUSBOT.md (repo root)
+        repo_root = Path(__file__).resolve().parents[2]
+        nexus_path = repo_root / "NEXUSBOT.md"
+        if nexus_path.exists():
+            content = nexus_path.read_text(errors="replace")
+            nodes.append({"id": "NEXUSBOT.md", "type": "brain", "size": len(content), "group": "project"})
+            file_contents["NEXUSBOT.md"] = content
+
+        # Skills
+        skills = self._enumerate_skills()
+        for s in skills:
+            skill_name = s["name"]
+            skill_path = workspace / "skills" / skill_name / "SKILL.md"
+            content = ""
+            if skill_path.exists():
+                content = skill_path.read_text(errors="replace")
+            nodes.append({"id": skill_name, "type": "skill", "size": len(content) or 100, "group": "skill"})
+            file_contents[skill_name] = content
+
+        # Build edges via cross-references
+        node_ids = {n["id"] for n in nodes}
+        # Also match without .md suffix for brain files
+        name_patterns: dict[str, str] = {}
+        for nid in node_ids:
+            base = nid.replace(".md", "") if nid.endswith(".md") else nid
+            # Match whole word (case-insensitive)
+            name_patterns[nid] = r'\b' + re.escape(base) + r'\b'
+
+        edges = []
+        seen_edges: set[tuple[str, str]] = set()
+        for src_id, src_content in file_contents.items():
+            if not src_content:
+                continue
+            for tgt_id, pattern in name_patterns.items():
+                if tgt_id == src_id:
+                    continue
+                edge_key = (src_id, tgt_id)
+                if edge_key in seen_edges:
+                    continue
+                if re.search(pattern, src_content, re.IGNORECASE):
+                    edges.append({"source": src_id, "target": tgt_id})
+                    seen_edges.add(edge_key)
+
+        return web.json_response({"nodes": nodes, "edges": edges})
+
+    # ── Twitter Handlers ────────────────────────────────────────
+
+    def _get_twitter_agent(self):
+        """Get TwitterAgent from registry."""
+        if self.agent_registry:
+            return self.agent_registry.get("twitter")
+        return None
+
+    async def _handle_twitter_feed(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"error": "Twitter agent not available"}, status=503)
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            scan = agent.get_latest_scan("feed")
+            return web.json_response(scan or {"items": [], "count": 0})
+        return web.json_response({"items": []})
+
+    async def _handle_twitter_stories(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response([], status=503)
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            return web.json_response(agent.get_stories())
+        return web.json_response([])
+
+    async def _handle_twitter_queue(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response([], status=503)
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            return web.json_response(agent._queue_list())
+        return web.json_response([])
+
+    async def _handle_twitter_approve(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"error": "Twitter agent not available"}, status=503)
+        draft_id = request.match_info["draft_id"]
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            draft = agent._queue_get(draft_id)
+            if not draft:
+                return web.json_response({"error": "Draft not found"}, status=404)
+            draft["state"] = "approved"
+            agent._queue_save(draft)
+            return web.json_response({"ok": True, "draft_id": draft_id})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_twitter_edit(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"error": "Twitter agent not available"}, status=503)
+        draft_id = request.match_info["draft_id"]
+        body = await request.json()
+        text = body.get("text", "")
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            draft = agent._queue_get(draft_id)
+            if not draft:
+                return web.json_response({"error": "Draft not found"}, status=404)
+            if text:
+                draft["text"] = text
+            agent._queue_save(draft)
+            return web.json_response({"ok": True, "draft_id": draft_id})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_twitter_reject(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"error": "Twitter agent not available"}, status=503)
+        draft_id = request.match_info["draft_id"]
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            draft = agent._queue_get(draft_id)
+            if not draft:
+                return web.json_response({"error": "Draft not found"}, status=404)
+            draft["state"] = "rejected"
+            agent._queue_save(draft)
+            return web.json_response({"ok": True, "draft_id": draft_id})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_twitter_post(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"error": "Twitter agent not available"}, status=503)
+        draft_id = request.match_info["draft_id"]
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            result = await agent.post_tweet(draft_id)
+            ok = not result.startswith("Error")
+            return web.json_response({"ok": ok, "result": result}, status=200 if ok else 400)
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_twitter_performance(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({}, status=503)
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            return web.json_response(agent.get_metrics())
+        return web.json_response({})
+
+    async def _handle_twitter_style(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"content": ""}, status=503)
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            return web.json_response({"content": agent.get_style()})
+        return web.json_response({"content": ""})
+
+    async def _handle_twitter_put_style(self, request: web.Request) -> web.Response:
+        agent = self._get_twitter_agent()
+        if not agent:
+            return web.json_response({"error": "Twitter agent not available"}, status=503)
+        body = await request.json()
+        content = body.get("content", "")
+        from nanobot.agent.twitter import TwitterAgent
+        if isinstance(agent, TwitterAgent):
+            agent.save_style(content)
+            return web.json_response({"ok": True, "size": len(content)})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    # ── Research Handlers ─────────────────────────────────────────
+
+    async def _handle_research_results(self, request: web.Request) -> web.Response:
+        """List recent search results."""
+        results_dir = self.engineer.workspace / "research" / "results"
+        if not results_dir.exists():
+            return web.json_response([])
+        files = sorted(results_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        results = []
+        for f in files[:20]:
+            try:
+                data = json.loads(f.read_text())
+                results.append({
+                    "filename": f.name,
+                    "query": data.get("query", ""),
+                    "timestamp": data.get("timestamp", ""),
+                    "sources": data.get("sources", []),
+                    "result_count": sum(len(v) for v in data.get("results", {}).values() if isinstance(v, list)),
+                })
+            except Exception:
+                pass
+        return web.json_response(results)
+
+    async def _handle_research_notes(self, request: web.Request) -> web.Response:
+        """List notes in the knowledge base."""
+        from nanobot.config.schema import ResearchConfig
+        config = ResearchConfig()
+        vault = Path(config.obsidian_vault_path).expanduser() / "NexusBot"
+        if not vault.exists():
+            return web.json_response([])
+        notes = []
+        for f in sorted(vault.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
+            notes.append({
+                "name": f.name,
+                "size": f.stat().st_size,
+                "modified": f.stat().st_mtime,
+            })
+        return web.json_response(notes)
+
+    async def _handle_research_capture(self, request: web.Request) -> web.Response:
+        """Capture content into the knowledge base (for browser extension / bookmarklet)."""
+        body = await request.json()
+        title = body.get("title", "")
+        content = body.get("content", "")
+        tags = body.get("tags", [])
+        source_url = body.get("url", "")
+        if not title or not content:
+            return web.json_response({"error": "title and content required"}, status=400)
+        # Use the research tool to index
+        if self.agent_loop:
+            research_tool = self.agent_loop.tools.get("research")
+            if research_tool:
+                result = await research_tool.execute(
+                    operation="index", title=title, content=content,
+                    tags=tags, source_url=source_url,
+                )
+                return web.json_response({"ok": True, "result": result})
+        return web.json_response({"error": "Research tool not available"}, status=503)
+
+    # ── Email PA Handlers ─────────────────────────────────────────
+
+    def _get_email_pa(self):
+        if self.agent_registry:
+            return self.agent_registry.get("email_pa")
+        return None
+
+    async def _handle_email_triage(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response({"items": [], "count": 0}, status=503)
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            return web.json_response(agent.get_triage())
+        return web.json_response({"items": []})
+
+    async def _handle_email_drafts(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response([], status=503)
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            return web.json_response(agent.list_drafts())
+        return web.json_response([])
+
+    async def _handle_email_send_draft(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response({"error": "Email PA not available"}, status=503)
+        draft_id = request.match_info["draft_id"]
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            draft = agent.get_draft(draft_id)
+            if not draft:
+                return web.json_response({"error": "Draft not found"}, status=404)
+            if draft["state"] != "draft":
+                return web.json_response({"error": f"Draft in state '{draft['state']}'"}, status=400)
+            from nanobot.bus.events import OutboundMessage
+            await agent.bus.publish_outbound(OutboundMessage(
+                channel="email", chat_id=draft["to"], content=draft["body"],
+                metadata={"subject": draft["subject"], "force_send": True},
+            ))
+            agent.update_draft(draft_id, state="sent")
+            agent.log_action("send_response", draft.get("email_id", ""), {
+                "draft_id": draft_id, "to": draft["to"],
+            })
+            return web.json_response({"ok": True, "draft_id": draft_id})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_email_discard_draft(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response({"error": "Email PA not available"}, status=503)
+        draft_id = request.match_info["draft_id"]
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            draft = agent.get_draft(draft_id)
+            if not draft:
+                return web.json_response({"error": "Draft not found"}, status=404)
+            agent.update_draft(draft_id, state="discarded")
+            return web.json_response({"ok": True})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_email_actions(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response([], status=503)
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            return web.json_response(agent.get_actions(50))
+        return web.json_response([])
+
+    async def _handle_email_undo(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response({"error": "Email PA not available"}, status=503)
+        action_id = request.match_info["action_id"]
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            result = agent.undo_action(action_id)
+            return web.json_response({"result": result})
+        return web.json_response({"error": "Wrong agent type"}, status=500)
+
+    async def _handle_email_rules(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response([], status=503)
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            return web.json_response(agent.get_rules())
+        return web.json_response([])
+
+    async def _handle_email_snoozed(self, request: web.Request) -> web.Response:
+        agent = self._get_email_pa()
+        if not agent:
+            return web.json_response([], status=503)
+        from nanobot.agent.email_pa import EmailPAAgent
+        if isinstance(agent, EmailPAAgent):
+            return web.json_response(agent.get_snoozed())
+        return web.json_response([])
+
+    # ── GitHub Agent Handlers ──────────────────────────────────────
+
+    def _get_github_tool(self):
+        if self.agent_loop:
+            return self.agent_loop.tools.get("github_scan")
+        return None
+
+    async def _handle_github_trending(self, request: web.Request) -> web.Response:
+        tool = self._get_github_tool()
+        if not tool:
+            return web.json_response({"error": "GitHub tool not available"}, status=503)
+        language = request.query.get("language", "")
+        since = request.query.get("since", "daily")
+        max_results = int(request.query.get("max_results", "15"))
+        result = await tool.execute(operation="trending", language=language, since=since, max_results=max_results)
+        return web.json_response({"result": result})
+
+    async def _handle_github_insights(self, request: web.Request) -> web.Response:
+        tool = self._get_github_tool()
+        if not tool:
+            return web.json_response({"error": "GitHub tool not available"}, status=503)
+        result = tool._get_insights()
+        return web.json_response({"result": result})
+
+    async def _handle_github_scans(self, request: web.Request) -> web.Response:
+        tool = self._get_github_tool()
+        if not tool:
+            return web.json_response({"scans": []}, status=503)
+        scan_dir = tool._scan_dir
+        scans = []
+        if scan_dir.exists():
+            for f in sorted(scan_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
+                if f.name == "insights.json":
+                    continue
+                try:
+                    data = json.loads(f.read_text())
+                    scans.append({"filename": f.name, **data})
+                except Exception:
+                    pass
+        return web.json_response({"scans": scans})
+
+    async def _handle_github_search(self, request: web.Request) -> web.Response:
+        tool = self._get_github_tool()
+        if not tool:
+            return web.json_response({"error": "GitHub tool not available"}, status=503)
+        body = await request.json()
+        query = body.get("query", "")
+        if not query:
+            return web.json_response({"error": "query required"}, status=400)
+        max_results = body.get("max_results", 10)
+        result = await tool.execute(operation="search_repos", query=query, max_results=max_results)
+        return web.json_response({"result": result})
+
+    async def _handle_github_analyze(self, request: web.Request) -> web.Response:
+        tool = self._get_github_tool()
+        if not tool:
+            return web.json_response({"error": "GitHub tool not available"}, status=503)
+        body = await request.json()
+        repo = body.get("repo", "")
+        if not repo:
+            return web.json_response({"error": "repo required (owner/name)"}, status=400)
+        result = await tool.execute(operation="analyze_repo", repo=repo)
+        return web.json_response({"result": result})
 
     async def _handle_architecture(self, request: web.Request) -> web.Response:
         """Return architecture data for the diagram."""
