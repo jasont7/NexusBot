@@ -50,9 +50,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-browser = [
-    "playwright>=1.40.0",
-]
 matrix = [
     "matrix-nio[e2e]>=0.25.2",
     "mistune>=3.0.0,<4.0.0",

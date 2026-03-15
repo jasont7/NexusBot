@@ -243,7 +243,11 @@ class GitHubScanTool(Tool):
         return "\n".join(lines)
 
     async def _scan_producthunt(self, max_results: int) -> str:
-        """Scrape Product Hunt trending."""
+        """Scan Product Hunt trending. Product Hunt is JS-rendered, so static
+        scraping is unreliable. Use gstack's /browse skill for best results:
+            exec('~/.claude/skills/gstack/browse/dist/browse goto https://www.producthunt.com')
+            exec('~/.claude/skills/gstack/browse/dist/browse text')
+        """
         import httpx
         async with httpx.AsyncClient(proxy=self._web_proxy, follow_redirects=True) as client:
             resp = await client.get("https://www.producthunt.com",
@@ -254,10 +258,9 @@ class GitHubScanTool(Tool):
                 return f"Failed to fetch Product Hunt (HTTP {resp.status_code}). Try using web_fetch instead."
             html = resp.text
 
-        # Simple extraction of product names from HTML
+        # Simple extraction of product names from HTML (fragile — PH is JS-rendered)
         import re
         products = []
-        # Look for product card patterns
         for match in re.finditer(r'data-test="post-name[^"]*"[^>]*>([^<]+)', html):
             name = match.group(1).strip()
             if name and name not in [p["name"] for p in products]:
@@ -266,9 +269,10 @@ class GitHubScanTool(Tool):
                     break
 
         if not products:
-            # Fallback: try to extract from meta/title tags
-            return ("Could not parse Product Hunt page. HTML structure may have changed.\n"
-                    "Try: web_fetch(url='https://www.producthunt.com') for raw content.")
+            return ("Could not parse Product Hunt page (JS-rendered content).\n"
+                    "Use the exec tool with gstack browse for reliable results:\n"
+                    "  exec('B=~/.claude/skills/gstack/browse/dist/browse && "
+                    "$B goto https://www.producthunt.com && $B text')")
 
         self._save_scan("producthunt", products)
         lines = [f"Product Hunt Trending ({len(products)} products):\n"]
